@@ -827,7 +827,8 @@ static void handle_input() {
     // Handle SELECT button to open settings (on button release)
     if (prev_input[6] && !select) {
         if (strcmp(current_path, ROMS_PATH) == 0) {
-            // Main menu settings - load multicore.opt
+            // Main menu settings - reload and show multicore.opt
+            settings_load();
             settings_show_menu();
         } else {
             // Check if we're in a console folder that has core-specific settings
