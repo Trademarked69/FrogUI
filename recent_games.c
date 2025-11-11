@@ -25,18 +25,33 @@ void recent_games_load(void) {
         // Remove newline
         line[strcspn(line, "\r\n")] = 0;
         
-        // Parse line: "core_name|game_name"
-        char *separator = strchr(line, '|');
-        if (separator) {
-            *separator = '\0';
-            strncpy(recent_games[recent_count].core_name, line, sizeof(recent_games[recent_count].core_name) - 1);
-            strncpy(recent_games[recent_count].game_name, separator + 1, sizeof(recent_games[recent_count].game_name) - 1);
-            
-            // Create display name
-            snprintf(recent_games[recent_count].display_name, sizeof(recent_games[recent_count].display_name),
-                    "%s (%s)", recent_games[recent_count].game_name, recent_games[recent_count].core_name);
-            
-            recent_count++;
+        // Parse line: "core_name|game_name|full_path"
+        char *separator1 = strchr(line, '|');
+        if (separator1) {
+            *separator1 = '\0';
+            char *separator2 = strchr(separator1 + 1, '|');
+            if (separator2) {
+                *separator2 = '\0';
+                strncpy(recent_games[recent_count].core_name, line, sizeof(recent_games[recent_count].core_name) - 1);
+                strncpy(recent_games[recent_count].game_name, separator1 + 1, sizeof(recent_games[recent_count].game_name) - 1);
+                strncpy(recent_games[recent_count].full_path, separator2 + 1, sizeof(recent_games[recent_count].full_path) - 1);
+                
+                // Create display name
+                snprintf(recent_games[recent_count].display_name, sizeof(recent_games[recent_count].display_name),
+                        "%s (%s)", recent_games[recent_count].game_name, recent_games[recent_count].core_name);
+                
+                recent_count++;
+            } else {
+                // Old format fallback: "core_name|game_name" 
+                strncpy(recent_games[recent_count].core_name, line, sizeof(recent_games[recent_count].core_name) - 1);
+                strncpy(recent_games[recent_count].game_name, separator1 + 1, sizeof(recent_games[recent_count].game_name) - 1);
+                recent_games[recent_count].full_path[0] = '\0'; // No path available
+                
+                snprintf(recent_games[recent_count].display_name, sizeof(recent_games[recent_count].display_name),
+                        "%s (%s)", recent_games[recent_count].game_name, recent_games[recent_count].core_name);
+                
+                recent_count++;
+            }
         }
     }
     
@@ -48,13 +63,13 @@ void recent_games_save(void) {
     if (!fp) return;
     
     for (int i = 0; i < recent_count; i++) {
-        fprintf(fp, "%s|%s\n", recent_games[i].core_name, recent_games[i].game_name);
+        fprintf(fp, "%s|%s|%s\n", recent_games[i].core_name, recent_games[i].game_name, recent_games[i].full_path);
     }
     
     fclose(fp);
 }
 
-void recent_games_add(const char *core_name, const char *game_name) {
+void recent_games_add(const char *core_name, const char *game_name, const char *full_path) {
     // Check if game already exists
     int existing_index = -1;
     for (int i = 0; i < recent_count; i++) {
@@ -86,6 +101,7 @@ void recent_games_add(const char *core_name, const char *game_name) {
         // Add new game at top
         strncpy(recent_games[0].core_name, core_name, sizeof(recent_games[0].core_name) - 1);
         strncpy(recent_games[0].game_name, game_name, sizeof(recent_games[0].game_name) - 1);
+        strncpy(recent_games[0].full_path, full_path, sizeof(recent_games[0].full_path) - 1);
         snprintf(recent_games[0].display_name, sizeof(recent_games[0].display_name),
                 "%s (%s)", game_name, core_name);
     }

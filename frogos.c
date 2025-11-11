@@ -154,7 +154,31 @@ static void load_current_thumbnail() {
     }
     
     char thumb_path[MAX_PATH_LEN];
-    get_thumbnail_path(entries[selected_index].path, thumb_path, sizeof(thumb_path));
+    
+    // Check if we're in Recent games mode
+    if (strcmp(current_path, "RECENT_GAMES") == 0) {
+        // For recent games, we need to use the full_path from the RecentGame structure
+        const RecentGame* recent_list = recent_games_get_list();
+        int recent_count = recent_games_get_count();
+        
+        if (selected_index < recent_count) {
+            const RecentGame *recent_game = &recent_list[selected_index];
+            if (recent_game->full_path[0] != '\0') {
+                get_thumbnail_path(recent_game->full_path, thumb_path, sizeof(thumb_path));
+            } else {
+                // No full path available, skip thumbnail
+                thumbnail_cache_valid = 0;
+                return;
+            }
+        } else {
+            // This is the ".." entry, no thumbnail
+            thumbnail_cache_valid = 0;
+            return;
+        }
+    } else {
+        // Regular file browser mode
+        get_thumbnail_path(entries[selected_index].path, thumb_path, sizeof(thumb_path));
+    }
     
     // Check if we already have this thumbnail cached
     if (thumbnail_cache_valid && strcmp(cached_thumbnail_path, thumb_path) == 0) {
@@ -577,8 +601,8 @@ static void handle_input() {
                     core_name = entry->path;
                     filename = separator + 1;
                     
-                    // Add to recent history (moves to top)
-                    recent_games_add(core_name, filename);
+                    // Add to recent history (moves to top) - use entry name as full path for recent games
+                    recent_games_add(core_name, filename, entry->name);
                 } else {
                     return; // Invalid format
                 }
@@ -588,8 +612,8 @@ static void handle_input() {
                 const char *filename_path = strrchr(entry->path, '/');
                 filename = filename_path ? filename_path + 1 : entry->name;
                 
-                // Add to recent history
-                recent_games_add(core_name, filename);
+                // Add to recent history - use full entry path
+                recent_games_add(core_name, filename, entry->path);
             }
 
             // DEBUG: Log selection
