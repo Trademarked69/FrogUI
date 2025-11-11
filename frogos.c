@@ -121,7 +121,7 @@ static void draw_text(int x, int y, const char *text, uint16_t color) {
                 c = c - 'a' + 'A';
             }
             draw_char(x, y, c, color);
-            x += 10;  // 10 pixels spacing for GamePocket font (tighter for wide letters)
+            x += 11;  // 11 pixels spacing for smaller GamePocket font (12pt)
         }
         text++;
     }

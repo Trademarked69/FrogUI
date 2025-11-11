@@ -58,9 +58,12 @@ void render_menu_item(uint16_t *framebuffer, int index, const char *name, int is
     int y = START_Y + (visible_index * ITEM_HEIGHT);
     
     if (is_selected) {
-        // Draw selection background (pill shape)
+        // Calculate text width for dynamic pillbox
+        int text_width = strlen(name) * FONT_CHAR_SPACING;
+        
+        // Draw selection background (pill shape) sized to text
         render_fill_rect(framebuffer, PADDING - 4, y - 2, 
-                        SCREEN_WIDTH - (PADDING * 2) + 8, ITEM_HEIGHT - 4, COLOR_SELECT_BG);
+                        text_width + 8, ITEM_HEIGHT - 4, COLOR_SELECT_BG);
         
         // Draw text in selection color
         font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, y, name, COLOR_SELECT_TEXT);

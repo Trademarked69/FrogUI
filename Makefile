@@ -51,7 +51,7 @@ else
 endif
 
 # Source files
-SOURCES_C := frogos.c
+SOURCES_C := frogos.c font.c render.c recent_games.c
 
 OBJECTS := $(SOURCES_C:.c=.o)
 

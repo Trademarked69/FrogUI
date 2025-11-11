@@ -21,14 +21,14 @@ def generate_font_bitmap(ttf_path, font_size, output_path):
     chars = [chr(i) for i in range(32, 128)]
 
     # Character dimensions
-    char_width = 16
+    char_width = 18
     char_height = 16
-    large_size = 64  # 4x larger
+    large_size = 72  # 4x larger (18*4)
 
     # Generate C array
     c_array = []
-    c_array.append("// GamePocket font - 16x16 bitmap (96 characters, ASCII 32-127)")
-    c_array.append("static const uint8_t font_gamepocket_16x16[96][32] = {")
+    c_array.append("// GamePocket font - 18x16 bitmap (96 characters, ASCII 32-127)")
+    c_array.append("static const uint8_t font_gamepocket_18x16[96][36] = {")
 
     # Position baseline lower to give room for ascenders at the top
     # baseline_y at 75% of large_size gives room for tall letters
@@ -50,19 +50,21 @@ def generate_font_bitmap(ttf_path, font_size, output_path):
         # Convert to bitmap (threshold at 100 for bolder result)
         pixels = img.load()
 
-        # Store as 16 rows of 2 bytes each (16 bits per row)
+        # Store as 16 rows of 18 bits each (need 3 bytes per row for 18 bits)
         bytes_data = []
         for row in range(char_height):
             row_bits = 0
             for col in range(char_width):
                 if pixels[col, row] > 50:  # Even lower threshold for maximum boldness
-                    row_bits |= (1 << (15 - col))
+                    row_bits |= (1 << (17 - col))
 
-            # Split into 2 bytes (big-endian)
-            byte1 = (row_bits >> 8) & 0xFF
-            byte2 = row_bits & 0xFF
+            # Split into 3 bytes (big-endian) for 18 bits
+            byte1 = (row_bits >> 16) & 0xFF
+            byte2 = (row_bits >> 8) & 0xFF
+            byte3 = row_bits & 0xFF
             bytes_data.append(byte1)
             bytes_data.append(byte2)
+            bytes_data.append(byte3)
 
         # Format as C array
         char_repr = repr(char) if char != '\\' else "'\\\\'"
@@ -77,12 +79,12 @@ def generate_font_bitmap(ttf_path, font_size, output_path):
 
     print(f"Font bitmap generated: {output_path}")
     print(f"Characters: {len(chars)}")
-    print(f"Size: 16x16 pixels per character")
-    print(f"Array size: {len(chars)} x 32 bytes = {len(chars) * 32} bytes")
+    print(f"Size: 18x16 pixels per character")
+    print(f"Array size: {len(chars)} x 48 bytes = {len(chars) * 48} bytes")
 
 if __name__ == "__main__":
-    ttf_path = "/app/cores/FrogOS/GamePocket-Regular-ZeroKern.ttf"  # Gaming font!
+    ttf_path = "/app/cores/FrogOS/fonts/GamePocket-Regular-ZeroKern.ttf"  # GamePocket font!
     output_path = "/app/cores/FrogOS/font_gamepocket.h"
-    font_size = 14  # TTF point size (will be rendered at 4x then downscaled) - smaller for GamePocket
+    font_size = 12  # TTF point size (smaller to fit wide letters better)
 
     generate_font_bitmap(ttf_path, font_size, output_path)

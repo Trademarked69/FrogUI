@@ -12,15 +12,15 @@ void font_draw_char(uint16_t *framebuffer, int screen_width, int screen_height,
     if (!framebuffer) return;
     if (c < 32 || c > 127) c = ' ';  // Replace non-printable with space
 
-    const uint8_t *glyph = font_gamepocket_16x16[c - 32];
+    const uint8_t *glyph = font_gamepocket_18x16[c - 32];
 
-    // 16x16 font, 2 bytes per row (16 bits)
+    // 18x16 font, 3 bytes per row (18 bits)
     for (int row = 0; row < 16; row++) {
-        // Each row is 2 bytes (16 bits) - read as big endian
-        uint16_t row_bits = (glyph[row * 2] << 8) | glyph[row * 2 + 1];
+        // Each row is 3 bytes (18 bits) - read as big endian
+        uint32_t row_bits = (glyph[row * 3] << 16) | (glyph[row * 3 + 1] << 8) | glyph[row * 3 + 2];
 
-        for (int col = 0; col < 16; col++) {
-            if (row_bits & (1 << (15 - col))) {  // Check bit from left to right
+        for (int col = 0; col < 18; col++) {
+            if (row_bits & (1 << (17 - col))) {  // Check bit from left to right
                 int px = x + col;
                 int py = y + row;
                 if (px >= 0 && px < screen_width && py >= 0 && py < screen_height) {
