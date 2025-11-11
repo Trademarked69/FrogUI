@@ -1,4 +1,5 @@
 #include "render.h"
+#include "theme.h"
 #include "font.h"
 #include <string.h>
 #include <stdlib.h>
@@ -86,6 +87,27 @@ void render_rounded_rect(uint16_t *framebuffer, int x, int y, int width, int hei
     }
 }
 
+void render_text_pillbox(uint16_t *framebuffer, int x, int y, const char *text, 
+                        uint16_t bg_color, uint16_t text_color, int padding) {
+    if (!framebuffer || !text) return;
+    
+    // Calculate text dimensions
+    int text_width = strlen(text) * FONT_CHAR_SPACING;
+    int text_height = FONT_CHAR_HEIGHT;
+    
+    // Calculate pillbox dimensions with padding
+    int pillbox_width = text_width + (padding * 2);
+    int pillbox_height = text_height + padding;
+    int pillbox_x = x - padding;
+    int pillbox_y = y - (padding / 2);
+    
+    // Draw pillbox background
+    render_rounded_rect(framebuffer, pillbox_x, pillbox_y, pillbox_width, pillbox_height, 8, bg_color);
+    
+    // Draw text
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, x, y, text, text_color);
+}
+
 void render_header(uint16_t *framebuffer, const char *title) {
     if (!framebuffer || !title) return;
     
@@ -119,15 +141,8 @@ void render_menu_item(uint16_t *framebuffer, int index, const char *name, int is
     int y = START_Y + (visible_index * ITEM_HEIGHT);
     
     if (is_selected) {
-        // Calculate text width for dynamic pillbox
-        int text_width = strlen(name) * FONT_CHAR_SPACING;
-        
-        // Draw selection background (rounded pill shape) sized to text
-        render_rounded_rect(framebuffer, PADDING - 4, y - 2, 
-                        text_width + 12, ITEM_HEIGHT - 4, 8, COLOR_SELECT_BG);
-        
-        // Draw text in selection color
-        font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, y, name, COLOR_SELECT_TEXT);
+        // Use unified pillbox rendering
+        render_text_pillbox(framebuffer, PADDING, y, name, COLOR_SELECT_BG, COLOR_SELECT_TEXT, 10);
     } else {
         // Draw normal text
         uint16_t text_color = is_dir ? COLOR_FOLDER : COLOR_TEXT;
@@ -190,8 +205,6 @@ int load_thumbnail(const char *rgb565_path, Thumbnail *thumb) {
     thumb->width = 0;
     thumb->height = 0;
     
-    extern void xlog(const char *fmt, ...);
-    
     // Use the path as-is for real device, only modify for dev environment
     const char *path_to_use = rgb565_path;
     char dev_path[512];
@@ -201,9 +214,7 @@ int load_thumbnail(const char *rgb565_path, Thumbnail *thumb) {
         snprintf(dev_path, sizeof(dev_path), "/app/sdcard/ROMS/%s", 
                  rgb565_path + strlen("/mnt/sda1/ROMS/"));
         path_to_use = dev_path;
-        xlog("[FrogOS Thumbnail] DEV MODE: Using dev path: %s\n", dev_path);
     } else {
-        xlog("[FrogOS Thumbnail] DEVICE MODE: Using original path: %s\n", rgb565_path);
     }
     
     // Just use the raw RGB565 loader - no parsing, no dynamic allocation
@@ -214,41 +225,13 @@ int load_thumbnail(const char *rgb565_path, Thumbnail *thumb) {
 static uint16_t thumbnail_buffer[250 * 200]; // Max size: 250x200
 
 int load_raw_rgb565(const char *path, Thumbnail *thumb) {
-    extern void xlog(const char *fmt, ...);
-    
-    xlog("[FrogOS Thumbnail] === DEBUG: Attempting to load RGB565 ===\n");
-    xlog("[FrogOS Thumbnail] Target path: %s\n", path);
-    
     // Check if file exists
     if (access(path, F_OK) != 0) {
-        xlog("[FrogOS Thumbnail] File does not exist: %s\n", path);
-        
-        // List directory contents for debugging
-        char *dir_path = strdup(path);
-        char *last_slash = strrchr(dir_path, '/');
-        if (last_slash) {
-            *last_slash = '\0';
-            xlog("[FrogOS Thumbnail] Checking directory: %s\n", dir_path);
-            
-            DIR *dir = opendir(dir_path);
-            if (dir) {
-                struct dirent *entry;
-                xlog("[FrogOS Thumbnail] Directory contents:\n");
-                while ((entry = readdir(dir)) != NULL) {
-                    xlog("[FrogOS Thumbnail]   - %s\n", entry->d_name);
-                }
-                closedir(dir);
-            } else {
-                xlog("[FrogOS Thumbnail] Cannot open directory: %s\n", dir_path);
-            }
-        }
-        free(dir_path);
         return 0;
     }
     
     FILE *fp = fopen(path, "rb");
     if (!fp) {
-        xlog("[FrogOS Thumbnail] Failed to open RGB565 (file exists but can't open): %s\n", path);
         return 0;
     }
     
@@ -256,7 +239,6 @@ int load_raw_rgb565(const char *path, Thumbnail *thumb) {
     long file_size = ftell(fp);
     fseek(fp, 0, SEEK_SET);
     
-    xlog("[FrogOS Thumbnail] RGB565 file size: %ld bytes\n", file_size);
     
     // Try common dimensions - including 160x160 for the resized images
     int dimensions[][2] = {{64,64}, {128,128}, {160,160}, {200,200}, {250,200}, {200,250}};
@@ -266,11 +248,9 @@ int load_raw_rgb565(const char *path, Thumbnail *thumb) {
         int w = dimensions[i][0];
         int h = dimensions[i][1];
         if (w * h * 2 == file_size) {
-            xlog("[FrogOS Thumbnail] Detected dimensions: %dx%d\n", w, h);
             
             // Check if it fits in our static buffer
             if (w * h > sizeof(thumbnail_buffer) / 2) {
-                xlog("[FrogOS Thumbnail] Image too large for static buffer\n");
                 fclose(fp);
                 return 0;
             }
@@ -283,16 +263,13 @@ int load_raw_rgb565(const char *path, Thumbnail *thumb) {
             fclose(fp);
             
             if (read_bytes == file_size) {
-                xlog("[FrogOS Thumbnail] Successfully loaded %dx%d RGB565\n", w, h);
                 return 1;
             } else {
-                xlog("[FrogOS Thumbnail] Read error: got %zu bytes, expected %ld\n", read_bytes, file_size);
                 return 0;
             }
         }
     }
     
-    xlog("[FrogOS Thumbnail] No matching dimensions found for file size %ld\n", file_size);
     fclose(fp);
     return 0;
 }
@@ -308,14 +285,8 @@ void free_thumbnail(Thumbnail *thumb) {
 
 void render_thumbnail(uint16_t *framebuffer, const Thumbnail *thumb) {
     if (!framebuffer || !thumb || !thumb->data) {
-        extern void xlog(const char *fmt, ...);
-        xlog("[FrogOS Thumbnail] render_thumbnail called but no data: fb=%p, thumb=%p, data=%p\n", 
-             framebuffer, thumb, thumb ? thumb->data : NULL);
         return;
     }
-    
-    extern void xlog(const char *fmt, ...);
-    xlog("[FrogOS Thumbnail] Rendering %dx%d thumbnail\n", thumb->width, thumb->height);
     
     // Calculate scaled dimensions to fit in thumbnail area
     int display_width = thumb->width;

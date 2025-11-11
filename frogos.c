@@ -23,8 +23,108 @@ void (*load_and_run_core)(const char*, int*) = (void (*)(const char*, int*))0x80
 #include "libretro.h"
 #include "font.h"
 #include "render.h"
+#include "theme.h"
 #include "recent_games.h"
 #include "settings.h"
+
+// Console to core name mapping (from buildcoresworking.sh)
+typedef struct {
+    const char *console_name;
+    const char *core_name;
+} ConsoleMapping;
+
+static const ConsoleMapping console_mappings[] = {
+    {"gb", "Gambatte"},
+    {"gbb", "TGBDual"}, 
+    {"gbgb", "Gearboy"},
+    {"dblcherrygb", "DoubleCherry-GB"},
+    {"gba", "gpSP"},
+    {"gbaf", "gpSP"}, 
+    {"gbaff", "gpSP"},
+    {"gbav", "VBA-Next"},
+    {"mgba", "mGBA"},
+    {"nes", "FCEUmm"},
+    {"nesq", "QuickNES"},
+    {"nest", "Nestopia"},
+    {"snes", "Snes9x2005"},
+    {"snes02", "Snes9x2002"},
+    {"sega", "PicoDrive"},
+    {"gg", "Gearsystem"},
+    {"gpgx", "Genesis-Plus-GX"},
+    {"pce", "Beetle-PCE-Fast"},
+    {"pcesgx", "Beetle-SuperGrafx"},
+    {"pcfx", "Beetle-PCFX"},
+    {"ngpc", "RACE"},
+    {"lnx", "Handy"},
+    {"lnxb", "Beetle-Lynx"},
+    {"wswan", "Beetle-WonderSwan"},
+    {"wsv", "Potator"},
+    {"pokem", "PokeMini"},
+    {"vb", "Beetle-VB"},
+    {"a26", "Stella2014"},
+    {"a5200", "Atari5200"},
+    {"a78", "ProSystem"},
+    {"a800", "Atari800"},
+    {"int", "FreeIntv"},
+    {"col", "Gearcoleco"},
+    {"msx", "BlueMSX"},
+    {"spec", "Fuse"},
+    {"zx81", "EightyOne"},
+    {"thom", "Theodore"},
+    {"vec", "VecX"},
+    {"c64", "VICE-x64"},
+    {"c64sc", "VICE-x64sc"},
+    {"c64f", "Frodo"},
+    {"c64fc", "Frodo"},
+    {"vic20", "VICE-xvic"},
+    {"amstradb", "CAP32"},
+    {"amstrad", "CrocoDS"},
+    {"bk", "BK-Emulator"},
+    {"pc8800", "QUASI88"},
+    {"xmil", "X-Millennium"},
+    {"m2k", "MAME2000"},
+    {"chip8", "JAXE"},
+    {"fcf", "FreeChaF"},
+    {"retro8", "Retro8"},
+    {"vapor", "VaporSpec"},
+    {"gong", "Gong"},
+    {"outrun", "Cannonball"},
+    {"wolf3d", "ECWolf"},
+    {"prboom", "PrBoom"},
+    {"flashback", "REminiscence"},
+    {"xrick", "XRick"},
+    {"gw", "Game-and-Watch"},
+    {"cdg", "PocketCDG"},
+    {"gme", "Game-Music-Emu"},
+    {"fake08", "FAKE-08"},
+    {"lowres-nx", "LowRes-NX"},
+    {"jnb", "Jump-n-Bump"},
+    {"cavestory", "NXEngine"},
+    {"o2em", "O2EM"},
+    {"quake", "TyrQuake"},
+    {"arduboy", "Arduous"}
+};
+
+// Get core name for a console folder
+static const char* get_core_name_for_console(const char* console_name) {
+    int mapping_count = sizeof(console_mappings) / sizeof(console_mappings[0]);
+    for (int i = 0; i < mapping_count; i++) {
+        if (strcmp(console_mappings[i].console_name, console_name) == 0) {
+            return console_mappings[i].core_name;
+        }
+    }
+    return NULL; // Unknown console
+}
+
+// Show core-specific settings menu
+static void show_core_settings(const char* core_name) {
+    if (settings_load_core(core_name)) {
+        settings_show_menu();
+    } else {
+        // No settings file found for this core - could show a message or create default
+        // For now, just ignore if no settings file exists
+    }
+}
 
 #ifndef min
 #define min(a, b) ((a) < (b) ? (a) : (b))
@@ -64,6 +164,19 @@ static int selected_index = 0;
 static int scroll_offset = 0;
 static char current_path[MAX_PATH_LEN];
 static uint16_t *framebuffer = NULL;
+
+// Boundary scroll delay (frames to wait before wrapping)
+#define BOUNDARY_DELAY_FRAMES 30
+static int boundary_delay_timer = 0;
+static int at_boundary = 0; // 1 = at top, 2 = at bottom
+
+// Reset navigation state when entering new folder
+static void reset_navigation_state(void) {
+    selected_index = 0;
+    scroll_offset = 0;
+    boundary_delay_timer = 0;
+    at_boundary = 0;
+}
 
 // Libretro callbacks
 static retro_video_refresh_t video_cb = NULL;
@@ -154,26 +267,18 @@ static void load_current_thumbnail() {
         const RecentGame* recent_list = recent_games_get_list();
         int recent_count = recent_games_get_count();
         
-        extern void xlog(const char *fmt, ...);
-        xlog("[FrogOS Thumbnail] In recent games mode, selected_index=%d, recent_count=%d\n", selected_index, recent_count);
-        
         if (selected_index < recent_count) {
             const RecentGame *recent_game = &recent_list[selected_index];
-            xlog("[FrogOS Thumbnail] Recent game: core=%s, game=%s, full_path='%s'\n", 
-                 recent_game->core_name, recent_game->game_name, recent_game->full_path);
-            
+                
             if (recent_game->full_path[0] != '\0') {
                 get_thumbnail_path(recent_game->full_path, thumb_path, sizeof(thumb_path));
-                xlog("[FrogOS Thumbnail] Generated thumb_path: %s\n", thumb_path);
             } else {
                 // No full path available, skip thumbnail
-                xlog("[FrogOS Thumbnail] No full path available for recent game\n");
                 thumbnail_cache_valid = 0;
                 return;
             }
         } else {
             // This is the ".." entry, no thumbnail
-            xlog("[FrogOS Thumbnail] Selected '..' entry, no thumbnail\n");
             thumbnail_cache_valid = 0;
             return;
         }
@@ -194,18 +299,12 @@ static void load_current_thumbnail() {
     }
     
     // Try to load new thumbnail
-    extern void xlog(const char *fmt, ...);
-    xlog("[FrogOS Thumbnail] Trying to load: %s\n", thumb_path);
-    
     if (load_thumbnail(thumb_path, &current_thumbnail)) {
         strncpy(cached_thumbnail_path, thumb_path, sizeof(cached_thumbnail_path) - 1);
         cached_thumbnail_path[sizeof(cached_thumbnail_path) - 1] = '\0';
         thumbnail_cache_valid = 1;
         
-        xlog("[FrogOS Thumbnail] Loaded successfully: %s (%dx%d)\n", thumb_path, 
-             current_thumbnail.width, current_thumbnail.height);
     } else {
-        xlog("[FrogOS Thumbnail] Failed to load: %s\n", thumb_path);
     }
 }
 
@@ -234,8 +333,7 @@ int compare_entries(const void *a, const void *b) {
 // Show recent games list
 static void show_recent_games(void) {
     entry_count = 0;
-    selected_index = 0;
-    scroll_offset = 0;
+    reset_navigation_state();
     
     // Set current_path so thumbnail loading knows we're in recent games mode
     strncpy(current_path, "RECENT_GAMES", sizeof(current_path) - 1);
@@ -278,8 +376,7 @@ static void show_recent_games(void) {
 // Show tools menu
 static void show_tools_menu(void) {
     entry_count = 0;
-    selected_index = 0;
-    scroll_offset = 0;
+    reset_navigation_state();
     
     // Set current_path for tools mode
     strncpy(current_path, "TOOLS", sizeof(current_path) - 1);
@@ -300,6 +397,12 @@ static void show_tools_menu(void) {
     entries[entry_count].is_dir = 1;
     entry_count++;
     
+    // Add Utils entry
+    strncpy(entries[entry_count].name, "Utils", sizeof(entries[entry_count].name) - 1);
+    strncpy(entries[entry_count].path, "UTILS", sizeof(entries[entry_count].path) - 1);
+    entries[entry_count].is_dir = 1;
+    entry_count++;
+    
     // Add back entry
     strncpy(entries[entry_count].name, "..", sizeof(entries[entry_count].name) - 1);
     strncpy(entries[entry_count].path, ROMS_PATH, sizeof(entries[entry_count].path) - 1);
@@ -311,6 +414,53 @@ static void show_tools_menu(void) {
     last_selected_index = selected_index;  // Prevent render loop from detecting this as a "change"
 }
 
+// Show utils menu with js2000 files
+static void show_utils_menu(void) {
+    entry_count = 0;
+    reset_navigation_state();
+    
+    // Set current_path for utils mode
+    strncpy(current_path, "UTILS", sizeof(current_path) - 1);
+    current_path[sizeof(current_path) - 1] = '\0';
+    
+    // Clear thumbnail cache when switching to utils mode
+    thumbnail_cache_valid = 0;
+    
+    // Scan js2000 directory for files
+    char js2000_path[MAX_PATH_LEN];
+    snprintf(js2000_path, sizeof(js2000_path), "%s/js2000", ROMS_PATH);
+    
+    DIR *dir = opendir(js2000_path);
+    if (dir) {
+        struct dirent *ent;
+        while ((ent = readdir(dir)) != NULL && entry_count < MAX_ENTRIES) {
+            if (ent->d_name[0] == '.') continue;  // Skip hidden files
+            
+            char full_path[MAX_PATH_LEN];
+            snprintf(full_path, sizeof(full_path), "%s/%s", js2000_path, ent->d_name);
+            
+            struct stat st;
+            if (stat(full_path, &st) == 0) {
+                strncpy(entries[entry_count].name, ent->d_name, sizeof(entries[entry_count].name) - 1);
+                strncpy(entries[entry_count].path, full_path, sizeof(entries[entry_count].path) - 1);
+                entries[entry_count].is_dir = S_ISDIR(st.st_mode);
+                entry_count++;
+            }
+        }
+        closedir(dir);
+    }
+    
+    // Add back entry
+    strncpy(entries[entry_count].name, "..", sizeof(entries[entry_count].name) - 1);
+    strncpy(entries[entry_count].path, "TOOLS", sizeof(entries[entry_count].path) - 1);
+    entries[entry_count].is_dir = 1;
+    entry_count++;
+    
+    // Load thumbnail for initially selected item
+    load_current_thumbnail();
+    last_selected_index = selected_index;
+}
+
 // Show shortcuts screen
 static void show_shortcuts_screen(void) {
     // Set current_path for shortcuts mode
@@ -320,8 +470,7 @@ static void show_shortcuts_screen(void) {
     // Clear thumbnail cache and entries for shortcuts mode
     thumbnail_cache_valid = 0;
     entry_count = 0;
-    selected_index = 0;
-    scroll_offset = 0;
+    reset_navigation_state();
 }
 
 // Show credits screen
@@ -333,8 +482,7 @@ static void show_credits_screen(void) {
     // Clear thumbnail cache and entries for credits mode
     thumbnail_cache_valid = 0;
     entry_count = 0;
-    selected_index = 0;
-    scroll_offset = 0;
+    reset_navigation_state();
 }
 
 // Scan directory and populate entries
@@ -343,8 +491,7 @@ static void scan_directory(const char *path) {
     struct dirent *ent;
 
     entry_count = 0;
-    selected_index = 0;
-    scroll_offset = 0;
+    reset_navigation_state();
 
     // Store whether we're at root for recent games insertion later
     int is_root = (strcmp(path, ROMS_PATH) == 0);
@@ -366,8 +513,8 @@ static void scan_directory(const char *path) {
     while ((ent = readdir(dir)) != NULL && entry_count < MAX_ENTRIES) {
         if (ent->d_name[0] == '.') continue;  // Skip hidden files
 
-        // Skip frogos and saves folders
-        if (strcasecmp(ent->d_name, "frogos") == 0 || strcasecmp(ent->d_name, "saves") == 0) {
+        // Skip frogui, js2000, and saves folders
+        if (strcasecmp(ent->d_name, "frogui") == 0 || strcasecmp(ent->d_name, "js2000") == 0 || strcasecmp(ent->d_name, "saves") == 0) {
             continue;
         }
 
@@ -462,11 +609,8 @@ static void render_settings_menu() {
             char value_text[256];
             snprintf(value_text, sizeof(value_text), "< %s >", option->current_value);
             
-            int text_width = strlen(value_text) * FONT_CHAR_SPACING;
-            render_rounded_rect(framebuffer, PADDING - 4, y_value - 2, 
-                            text_width + 12, ITEM_HEIGHT - 4, 8, COLOR_SELECT_BG);
-            
-            font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, y_value, value_text, COLOR_SELECT_TEXT);
+            // Use unified pillbox rendering
+            render_text_pillbox(framebuffer, PADDING, y_value, value_text, COLOR_SELECT_BG, COLOR_SELECT_TEXT, 10);
         } else {
             font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, y_value, option->current_value, COLOR_TEXT);
         }
@@ -519,10 +663,22 @@ static void render_credits_screen() {
     int start_y = 50;
     int line_height = 24;
     
-    // Credits text
-    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, start_y, "FrogUI Dev & Idea", COLOR_TEXT);
+    // Credits text with pillboxes for sections
+    // FrogUI Dev & Idea section
+    const char *section1 = " FrogUI Dev & Idea ";
+    int section1_width = strlen(section1) * FONT_CHAR_SPACING;
+    render_rounded_rect(framebuffer, PADDING - 4, start_y - 2, section1_width + 8, 20, 10, COLOR_HEADER);
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, start_y, section1, COLOR_BG);
+    
     font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, start_y + line_height, "Prosty & Desoxyn", COLOR_TEXT);
-    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, start_y + line_height * 2, "Design: Q_ta", COLOR_TEXT);
+    
+    // Design section
+    const char *section2 = " Design ";
+    int section2_width = strlen(section2) * FONT_CHAR_SPACING;
+    render_rounded_rect(framebuffer, PADDING - 4, start_y + line_height * 2 - 2, section2_width + 8, 20, 10, COLOR_HEADER);
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, start_y + line_height * 2, section2, COLOR_BG);
+    
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, start_y + line_height * 3, "Q_ta", COLOR_TEXT);
     
     // Draw legend
     const char *legend = " B - BACK ";
@@ -540,7 +696,14 @@ static void render_menu() {
 
     // If game is queued, just show loading screen
     if (game_queued) {
-        font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, 30, SCREEN_HEIGHT / 2, "LOADING...", 0xFFFF);
+        // Show centered loading pillbox
+        const char* loading_text = "LOADING...";
+        int text_width = strlen(loading_text) * FONT_CHAR_SPACING;
+        int x = (SCREEN_WIDTH - text_width) / 2;
+        int y = (SCREEN_HEIGHT - FONT_CHAR_HEIGHT) / 2;
+        
+        // Use unified pillbox rendering
+        render_text_pillbox(framebuffer, x, y, loading_text, theme_header(), theme_bg(), 12);
         return;
     }
 
@@ -650,8 +813,24 @@ static void handle_input() {
     }
 
     // Handle SELECT button to open settings (on button release)
-    if (prev_input[6] && !select && strcmp(current_path, ROMS_PATH) == 0) {
-        settings_show_menu();
+    if (prev_input[6] && !select) {
+        if (strcmp(current_path, ROMS_PATH) == 0) {
+            // Main menu settings - load multicore.opt
+            settings_show_menu();
+        } else {
+            // Check if we're in a console folder that has core-specific settings
+            char console_folder[256];
+            const char *slash = strrchr(current_path, '/');
+            if (slash && slash != current_path) {
+                // Extract folder name from path like "/mnt/sda1/ROMS/gb"
+                strcpy(console_folder, slash + 1);
+                const char *core_name = get_core_name_for_console(console_folder);
+                if (core_name) {
+                    // Show core-specific settings
+                    show_core_settings(core_name);
+                }
+            }
+        }
         prev_input[6] = select;
         return;
     }
@@ -660,9 +839,23 @@ static void handle_input() {
     if (prev_input[0] && !up) {
         if (selected_index > 0) {
             selected_index--;
+            boundary_delay_timer = 0;
+            at_boundary = 0;
         } else {
-            // Loop to the last entry when at the top
-            selected_index = entry_count - 1;
+            // At top boundary - implement delay before wrapping
+            if (at_boundary != 1) {
+                // First time hitting top boundary
+                at_boundary = 1;
+                boundary_delay_timer = BOUNDARY_DELAY_FRAMES;
+            } else if (boundary_delay_timer > 0) {
+                // Still in delay period - stay at top
+                boundary_delay_timer--;
+            } else {
+                // Delay finished - wrap to bottom
+                selected_index = entry_count - 1;
+                at_boundary = 0;
+                boundary_delay_timer = 0;
+            }
         }
         
         // Adjust scroll_offset if necessary
@@ -675,9 +868,23 @@ static void handle_input() {
     if (prev_input[1] && !down) {
         if (selected_index < entry_count - 1) {
             selected_index++;
+            boundary_delay_timer = 0;
+            at_boundary = 0;
         } else {
-            // Loop to the first entry when at the bottom
-            selected_index = 0;
+            // At bottom boundary - implement delay before wrapping
+            if (at_boundary != 2) {
+                // First time hitting bottom boundary
+                at_boundary = 2;
+                boundary_delay_timer = BOUNDARY_DELAY_FRAMES;
+            } else if (boundary_delay_timer > 0) {
+                // Still in delay period - stay at bottom
+                boundary_delay_timer--;
+            } else {
+                // Delay finished - wrap to top
+                selected_index = 0;
+                at_boundary = 0;
+                boundary_delay_timer = 0;
+            }
         }
         
         // Adjust scroll_offset if necessary
@@ -743,6 +950,10 @@ static void handle_input() {
                 // Show credits screen
                 show_credits_screen();
                 strncpy(current_path, "CREDITS", sizeof(current_path) - 1);
+            } else if (strcmp(entry->path, "UTILS") == 0) {
+                // Show utils menu
+                show_utils_menu();
+                strncpy(current_path, "UTILS", sizeof(current_path) - 1);
             } else {
                 strncpy(current_path, entry->path, sizeof(current_path) - 1);
                 scan_directory(current_path);
@@ -751,6 +962,27 @@ static void handle_input() {
             // File selected - try to launch it
             const char *core_name;
             const char *filename;
+            
+            // Check if we're in Utils - launch js2000 core
+            if (strcmp(current_path, "UTILS") == 0) {
+                // Launch selected file with js2000 core
+                
+                // Remove extension from the filename for ptr_gs_run_game_name
+                char filename_no_ext[256];
+                strncpy(filename_no_ext, entry->name, sizeof(filename_no_ext) - 1);
+                char *dot_position = strrchr(filename_no_ext, '.');
+                if (dot_position != NULL) {
+                    *dot_position = '\0'; 
+                }
+                
+                // Use js2000 core to launch the selected file
+                sprintf((char *)ptr_gs_run_game_file, "/mnt/sda1/ROMS/js2000;%s.gba", filename_no_ext);
+                sprintf((char *)ptr_gs_run_folder, "/mnt/sda1/ROMS"); 
+                sprintf((char *)ptr_gs_run_game_name, "js2000;%s", filename_no_ext);
+                
+                game_queued = true; // Pass to retro_run, can only load the core from there
+                return;
+            }
             
             // Check if we're in Recent games
             if (strcmp(current_path, "RECENT_GAMES") == 0) {
@@ -789,15 +1021,6 @@ static void handle_input() {
                 recent_games_add(core_name, filename, entry->path);
             }
 
-            // DEBUG: Log selection
-            extern void xlog(const char *fmt, ...);
-            xlog("[FrogOS] ROM Selection:\n");
-            xlog("[FrogOS]   Current path: %s\n", current_path);
-            xlog("[FrogOS]   Selected: %s\n", entry->name);
-            xlog("[FrogOS]   Full path: %s\n", entry->path);
-            xlog("[FrogOS]   Core: %s\n", core_name);
-            xlog("[FrogOS]   Filename: %s\n", filename);
-
             sprintf((char *)ptr_gs_run_game_file, "/mnt/sda1/ROMS/%s;%s.gba", core_name, filename); // Workaround for loading a core from within a core, loader corrects
             sprintf((char *)ptr_gs_run_folder, "/mnt/sda1/ROMS"); // Expects "/mnt/sda1/ROMS" format
             sprintf((char *)ptr_gs_run_game_name, "%s;%s", core_name, filename); // Expects the filename without any extension 
@@ -830,6 +1053,10 @@ static void handle_input() {
             // Go back from Credits to Tools
             show_tools_menu();
             strncpy(current_path, "TOOLS", sizeof(current_path) - 1);
+        } else if (strcmp(current_path, "UTILS") == 0) {
+            // Go back from Utils to Tools
+            show_tools_menu();
+            strncpy(current_path, "TOOLS", sizeof(current_path) - 1);
         } else if (strcmp(current_path, ROMS_PATH) != 0) {
             char *last_slash = strrchr(current_path, '/');
             if (last_slash && last_slash != current_path) {
@@ -858,6 +1085,7 @@ void retro_init(void) {
     // Initialize modular systems
     render_init(framebuffer);
     font_init();
+    theme_init();
     recent_games_init();
     settings_init();
     
@@ -894,7 +1122,7 @@ void retro_get_system_info(struct retro_system_info *info) {
     info->library_name     = "FrogOS";
     info->library_version  = "0.1";
     info->need_fullpath    = false;
-    info->valid_extensions = "frogos";
+    info->valid_extensions = "frogui";
 }
 
 void retro_get_system_av_info(struct retro_system_av_info *info) {

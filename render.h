@@ -3,21 +3,23 @@
 
 #include <stdint.h>
 #include <stddef.h>
+#include "theme.h"
 
 // Screen dimensions
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 240
 
-// Colors (RGB565) - MinUI Exact Style
-#define COLOR_BG        0x0000  // Black background
-#define COLOR_TEXT      0xFFFF  // White text
-#define COLOR_SELECT_BG 0xFFFF  // White selection background (pill)
-#define COLOR_SELECT_TEXT 0x0000  // Black text when selected
-#define COLOR_HEADER    0x8410  // Better grey for headers/titles (more like MinUI)
-#define COLOR_FOLDER    0xFFFF  // White for folders (same as text)
-#define COLOR_LEGEND    0xFFFF  // White text for legends (readable on dark bg)
-#define COLOR_LEGEND_BG 0x2104  // Better dark grey background for legend pills
-#define COLOR_DISABLED  0x8410  // Better grey for unselectable options
+// Colors are now provided by the theme system
+// Legacy defines for backwards compatibility - will be removed
+#define COLOR_BG        theme_bg()
+#define COLOR_TEXT      theme_text()
+#define COLOR_SELECT_BG theme_select_bg()
+#define COLOR_SELECT_TEXT theme_select_text()
+#define COLOR_HEADER    theme_header()
+#define COLOR_FOLDER    theme_folder()
+#define COLOR_LEGEND    theme_legend()
+#define COLOR_LEGEND_BG theme_legend_bg()
+#define COLOR_DISABLED  theme_disabled()
 
 // MinUI Layout Constants
 #define HEADER_HEIGHT 30
@@ -48,6 +50,10 @@ void render_fill_rect(uint16_t *framebuffer, int x, int y, int width, int height
 
 // Draw a rounded rectangle (pill shape)
 void render_rounded_rect(uint16_t *framebuffer, int x, int y, int width, int height, int radius, uint16_t color);
+
+// Draw a text pillbox with proper padding (unified method)
+void render_text_pillbox(uint16_t *framebuffer, int x, int y, const char *text, 
+                        uint16_t bg_color, uint16_t text_color, int padding);
 
 // Draw menu header with title
 void render_header(uint16_t *framebuffer, const char *title);

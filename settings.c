@@ -1,4 +1,5 @@
 #include "settings.h"
+#include "theme.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -8,6 +9,13 @@ static int settings_count = 0;
 static int settings_active = 0;
 static int settings_selected = 0;
 static int settings_scroll_offset = 0;
+
+// Track current config file being edited
+static char current_config_path[512] = "/mnt/sda1/configs/multicore.opt";
+
+// Forward declarations
+static int settings_load_file(const char *config_path);
+static void apply_theme_from_settings(void);
 
 void settings_init(void) {
     settings_count = 0;
@@ -92,6 +100,32 @@ int settings_load(void) {
         config_path = "/app/sdcard/configs/multicore.opt";
     }
     
+    strncpy(current_config_path, config_path, sizeof(current_config_path) - 1);
+    return settings_load_file(config_path);
+}
+
+// Load core-specific settings
+int settings_load_core(const char *core_name) {
+    char config_path[512];
+    
+    // Try sdcard path first for dev machines - note the subdirectory structure!
+    snprintf(config_path, sizeof(config_path), "/app/sdcard/configs/%s/%s.opt", core_name, core_name);
+    FILE *test = fopen(config_path, "r");
+    if (test) {
+        fclose(test);
+        strncpy(current_config_path, config_path, sizeof(current_config_path) - 1);
+        return settings_load_file(config_path);
+    }
+    
+    // Use standard path with subdirectory structure
+    snprintf(config_path, sizeof(config_path), "/mnt/sda1/configs/%s/%s.opt", core_name, core_name);
+    strncpy(current_config_path, config_path, sizeof(current_config_path) - 1);
+    return settings_load_file(config_path);
+}
+
+// Common settings loading function
+static int settings_load_file(const char *config_path) {
+    
     FILE *fp = fopen(config_path, "r");
     if (!fp) return 0;
     
@@ -157,49 +191,30 @@ int settings_load(void) {
     }
     
     fclose(fp);
+    
+    // Apply theme changes after loading settings
+    apply_theme_from_settings();
+    
     return settings_count;
 }
 
 int settings_save(void) {
-    extern void xlog(const char *fmt, ...);
-    xlog("[FrogOS Settings] === settings_save() started ===\n");
-    
-    // Read current file to preserve structure
-    // For testing on dev machine, use sdcard path if it exists
-    const char *config_path = "/mnt/sda1/configs/multicore.opt";
-    const char *temp_path = "/mnt/sda1/configs/multicore.opt.tmp";
-    FILE *test = fopen("/app/sdcard/configs/multicore.opt", "r");
-    if (test) {
-        fclose(test);
-        config_path = "/app/sdcard/configs/multicore.opt";
-        temp_path = "/app/sdcard/configs/multicore.opt.tmp";
-        xlog("[FrogOS Settings] Using dev path: %s\n", config_path);
-    } else {
-        xlog("[FrogOS Settings] Using device path: %s\n", config_path);
-    }
+    // Use the current config path that was set during load
+    const char *config_path = current_config_path;
+    char temp_path[512];
+    snprintf(temp_path, sizeof(temp_path), "%s.tmp", config_path);
     
     FILE *fp_read = fopen(config_path, "r");
     if (!fp_read) {
-        // Try without configs subdirectory for testing
-        config_path = "/mnt/sda1/multicore.opt";
-        temp_path = "/mnt/sda1/multicore.opt.tmp";
-        fp_read = fopen(config_path, "r");
-        if (!fp_read) {
-            xlog("[FrogOS Settings] ERROR: Could not open config file\n");
-            return 0;
-        }
-        xlog("[FrogOS Settings] Using fallback path: %s\n", config_path);
+        return 0;
     }
     
     // Create temporary file
     FILE *fp_write = fopen(temp_path, "w");
     if (!fp_write) {
-        xlog("[FrogOS Settings] ERROR: Could not create temp file: %s\n", temp_path);
         fclose(fp_read);
         return 0;
     }
-    
-    xlog("[FrogOS Settings] Opened files successfully, processing...\n");
     
     char line[512];
     while (fgets(line, sizeof(line), fp_read)) {
@@ -224,9 +239,6 @@ int settings_save(void) {
                 int found = 0;
                 for (int i = 0; i < settings_count; i++) {
                     if (strcmp(settings[i].name, option_name) == 0) {
-                        xlog("[FrogOS Settings] Updating %s from '%s' to '%s'\n", 
-                             option_name, settings[i].current_value,
-                             settings[i].possible_values[settings[i].current_index]);
                         fprintf(fp_write, "%s = \"%s\"\n", option_name, 
                                settings[i].possible_values[settings[i].current_index]);
                         found = 1;
@@ -269,15 +281,14 @@ int settings_save(void) {
         fclose(src);
         fclose(dst);
         remove(temp_path);  // Delete temp file
-        xlog("[FrogOS Settings] File save successful\n");
     } else {
         if (src) fclose(src);
         if (dst) fclose(dst);
-        xlog("[FrogOS Settings] ERROR: Could not copy temp file to config\n");
         return 0;
     }
     
-    xlog("[FrogOS Settings] === settings_save() completed ===\n");
+    // Apply theme changes after saving settings
+    apply_theme_from_settings();
     
     return 1;
 }
@@ -294,17 +305,11 @@ const SettingsOption* settings_get_option(int index) {
 void settings_cycle_option(int index) {
     if (index < 0 || index >= settings_count) return;
     
-    extern void xlog(const char *fmt, ...);
-    xlog("[FrogOS Settings] Cycling option %d (%s) from index %d to ", 
-         index, settings[index].name, settings[index].current_index);
-    
     settings[index].current_index = (settings[index].current_index + 1) % settings[index].value_count;
     strncpy(settings[index].current_value, 
            settings[index].possible_values[settings[index].current_index], 
            MAX_OPTION_VALUE_LEN - 1);
     settings[index].current_value[MAX_OPTION_VALUE_LEN - 1] = '\0';
-    
-    xlog("%d (%s)\n", settings[index].current_index, settings[index].current_value);
 }
 
 void settings_show_menu(void) {
@@ -369,16 +374,14 @@ int settings_handle_input(int up, int down, int left, int right, int a, int b, i
     
     if (a) {
         // Save settings and exit
-        extern void xlog(const char *fmt, ...);
-        xlog("[FrogOS Settings] A button pressed, calling settings_save()\n");
-        int save_result = settings_save();
-        xlog("[FrogOS Settings] settings_save() returned: %d\n", save_result);
+        settings_save();
         settings_active = 0;
         return 1;
     }
     
     if (b) {
-        // Exit without saving
+        // Exit and save (B button should save like most settings menus)
+        settings_save();
         settings_active = 0;
         return 1;
     }
@@ -396,4 +399,15 @@ int settings_get_selected_index(void) {
 
 int settings_get_scroll_offset(void) {
     return settings_scroll_offset;
+}
+
+// Apply theme changes from loaded settings
+static void apply_theme_from_settings(void) {
+    // Look for the frogui_theme setting
+    for (int i = 0; i < settings_count; i++) {
+        if (strcmp(settings[i].name, "frogui_theme") == 0) {
+            theme_load_from_settings(settings[i].current_value);
+            break;
+        }
+    }
 }

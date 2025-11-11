@@ -2,6 +2,8 @@
 
 FrogOS is a libretro core that provides a simple file browser interface for the SF2000/GB300 multicore system. It's designed to mimic the MinUI interface and allows you to browse and launch games directly from the device.
 
+📖 **[How to Use Guide](HOW_TO_USE.md)** - Complete setup and usage instructions
+
 ## Features
 
 - **Folder-Only Root View**: The main `/mnt/sda1/ROMS` directory only shows folders, keeping your interface clean

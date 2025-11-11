@@ -23,6 +23,9 @@ void settings_init(void);
 // Load settings from multicore.opt
 int settings_load(void);
 
+// Load core-specific settings (e.g., Gambatte.opt)
+int settings_load_core(const char *core_name);
+
 // Save settings to multicore.opt
 int settings_save(void);
 
