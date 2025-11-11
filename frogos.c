@@ -240,6 +240,10 @@ static void show_recent_games(void) {
     selected_index = 0;
     scroll_offset = 0;
     
+    // Set current_path so thumbnail loading knows we're in recent games mode
+    strncpy(current_path, "RECENT_GAMES", sizeof(current_path) - 1);
+    current_path[sizeof(current_path) - 1] = '\0';
+    
     // Clear thumbnail cache when switching to recent games mode
     thumbnail_cache_valid = 0;
     xlog("[FrogOS] Cleared thumbnail cache, setting selected_index=0\n");
@@ -277,6 +281,61 @@ static void show_recent_games(void) {
     load_current_thumbnail();
     last_selected_index = selected_index;  // Prevent render loop from detecting this as a "change"
     xlog("[FrogOS] === FINISHED ENTERING RECENT GAMES ===\n");
+}
+
+// Show tools menu
+static void show_tools_menu(void) {
+    extern void xlog(const char *fmt, ...);
+    xlog("[FrogOS] === ENTERING TOOLS MENU ===\n");
+    
+    entry_count = 0;
+    selected_index = 0;
+    scroll_offset = 0;
+    
+    // Set current_path for tools mode
+    strncpy(current_path, "TOOLS", sizeof(current_path) - 1);
+    current_path[sizeof(current_path) - 1] = '\0';
+    
+    // Clear thumbnail cache when switching to tools mode
+    thumbnail_cache_valid = 0;
+    xlog("[FrogOS] Cleared thumbnail cache, setting selected_index=0\n");
+    
+    // Add Shortcuts entry
+    strncpy(entries[entry_count].name, "Shortcuts", sizeof(entries[entry_count].name) - 1);
+    strncpy(entries[entry_count].path, "SHORTCUTS", sizeof(entries[entry_count].path) - 1);
+    entries[entry_count].is_dir = 1;
+    entry_count++;
+    
+    // Add back entry
+    strncpy(entries[entry_count].name, "..", sizeof(entries[entry_count].name) - 1);
+    strncpy(entries[entry_count].path, ROMS_PATH, sizeof(entries[entry_count].path) - 1);
+    entries[entry_count].is_dir = 1;
+    entry_count++;
+    
+    xlog("[FrogOS] Tools menu created with %d entries\n", entry_count);
+    
+    // Load thumbnail for initially selected item AND reset last_selected_index to prevent duplicate loading
+    load_current_thumbnail();
+    last_selected_index = selected_index;  // Prevent render loop from detecting this as a "change"
+    xlog("[FrogOS] === FINISHED ENTERING TOOLS MENU ===\n");
+}
+
+// Show shortcuts screen
+static void show_shortcuts_screen(void) {
+    extern void xlog(const char *fmt, ...);
+    xlog("[FrogOS] === ENTERING SHORTCUTS SCREEN ===\n");
+    
+    // Set current_path for shortcuts mode
+    strncpy(current_path, "SHORTCUTS", sizeof(current_path) - 1);
+    current_path[sizeof(current_path) - 1] = '\0';
+    
+    // Clear thumbnail cache and entries for shortcuts mode
+    thumbnail_cache_valid = 0;
+    entry_count = 0;
+    selected_index = 0;
+    scroll_offset = 0;
+    
+    xlog("[FrogOS] === FINISHED ENTERING SHORTCUTS SCREEN ===\n");
 }
 
 // Scan directory and populate entries
@@ -358,6 +417,12 @@ static void scan_directory(const char *path) {
         strncpy(entries[0].path, "RECENT_GAMES", sizeof(entries[0].path) - 1);
         entries[0].is_dir = 1;
         entry_count++;
+        
+        // Add Tools at the bottom
+        strncpy(entries[entry_count].name, "Tools", sizeof(entries[entry_count].name) - 1);
+        strncpy(entries[entry_count].path, "TOOLS", sizeof(entries[entry_count].path) - 1);
+        entries[entry_count].is_dir = 1;
+        entry_count++;
     }
     
     // Load thumbnail for initially selected item AND reset last_selected_index to prevent duplicate loading
@@ -421,6 +486,31 @@ static void render_settings_menu() {
     font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, legend_x, legend_y, legend, COLOR_LEGEND);
 }
 
+// Render shortcuts screen
+static void render_shortcuts_screen() {
+    // Draw title
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, 10, "SHORTCUTS", COLOR_HEADER);
+    
+    // Draw shortcut information
+    int start_y = 50;
+    int line_height = 24;
+    
+    // Shortcuts text
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, start_y, "SAVE STATE: L + R + X", COLOR_TEXT);
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, start_y + line_height, "LOAD STATE: L + R + Y", COLOR_TEXT);
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, start_y + line_height * 2, "NEXT SLOT: L + R + >", COLOR_TEXT);
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, start_y + line_height * 3, "PREV SLOT: L + R + <", COLOR_TEXT);
+    
+    // Draw legend
+    const char *legend = " B - BACK ";
+    int legend_y = SCREEN_HEIGHT - 24;
+    int legend_width = strlen(legend) * FONT_CHAR_SPACING;
+    int legend_x = SCREEN_WIDTH - legend_width - 12;
+    
+    render_rounded_rect(framebuffer, legend_x - 4, legend_y - 2, legend_width + 8, 20, 10, COLOR_LEGEND_BG);
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, legend_x, legend_y, legend, COLOR_LEGEND);
+}
+
 // Render the menu using modular render system
 static void render_menu() {
     render_clear_screen(framebuffer);
@@ -434,6 +524,12 @@ static void render_menu() {
     // If settings are active, render settings menu
     if (settings_is_active()) {
         render_settings_menu();
+        return;
+    }
+    
+    // If in shortcuts mode, render shortcuts screen
+    if (strcmp(current_path, "SHORTCUTS") == 0) {
+        render_shortcuts_screen();
         return;
     }
 
@@ -621,6 +717,14 @@ static void handle_input() {
                 // Show recent games list
                 show_recent_games();
                 strncpy(current_path, "RECENT_GAMES", sizeof(current_path) - 1);
+            } else if (strcmp(entry->path, "TOOLS") == 0) {
+                // Show tools menu
+                show_tools_menu();
+                strncpy(current_path, "TOOLS", sizeof(current_path) - 1);
+            } else if (strcmp(entry->path, "SHORTCUTS") == 0) {
+                // Show shortcuts screen
+                show_shortcuts_screen();
+                strncpy(current_path, "SHORTCUTS", sizeof(current_path) - 1);
             } else {
                 strncpy(current_path, entry->path, sizeof(current_path) - 1);
                 scan_directory(current_path);
@@ -696,6 +800,14 @@ static void handle_input() {
             // Go back from Recent games to main ROMS directory
             strncpy(current_path, ROMS_PATH, sizeof(current_path) - 1);
             scan_directory(current_path);
+        } else if (strcmp(current_path, "TOOLS") == 0) {
+            // Go back from Tools to main ROMS directory
+            strncpy(current_path, ROMS_PATH, sizeof(current_path) - 1);
+            scan_directory(current_path);
+        } else if (strcmp(current_path, "SHORTCUTS") == 0) {
+            // Go back from Shortcuts to Tools
+            show_tools_menu();
+            strncpy(current_path, "TOOLS", sizeof(current_path) - 1);
         } else if (strcmp(current_path, ROMS_PATH) != 0) {
             char *last_slash = strrchr(current_path, '/');
             if (last_slash && last_slash != current_path) {
