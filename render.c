@@ -105,8 +105,8 @@ void render_legend(uint16_t *framebuffer) {
     
     // Draw legend pill (right-aligned) with rounded corners
     int legend_x = SCREEN_WIDTH - legend_width - 12;
-    render_rounded_rect(framebuffer, legend_x - 4, legend_y - 2, legend_width + 8, 20, 10, COLOR_SELECT_BG);
-    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, legend_x, legend_y, legend, COLOR_SELECT_TEXT);
+    render_rounded_rect(framebuffer, legend_x - 4, legend_y - 2, legend_width + 8, 20, 10, COLOR_LEGEND_BG);
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, legend_x, legend_y, legend, COLOR_LEGEND);
 }
 
 void render_menu_item(uint16_t *framebuffer, int index, const char *name, int is_dir, 

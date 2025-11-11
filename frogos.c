@@ -77,13 +77,6 @@ static retro_input_state_t input_state_cb = NULL;
 static int prev_input[16] = {0};
 static bool game_queued = false;  // Flag to indicate game is queued
 
-// Colors (RGB565) - MinUI Exact Style from screenshot
-#define COLOR_BG        0x0000  // Black background
-#define COLOR_TEXT      0xFFFF  // White text
-#define COLOR_SELECT_BG 0xFFFF  // White selection background (pill)
-#define COLOR_SELECT_TEXT 0x0000  // Black text when selected
-#define COLOR_HEADER    0xCE59  // Light gray for header
-#define COLOR_FOLDER    0xFFFF  // White for folders (same as text)
 
 // Get the base name from a path
 static const char *get_basename(const char *path) {
@@ -243,6 +236,9 @@ static void show_recent_games(void) {
     entry_count = 0;
     selected_index = 0;
     scroll_offset = 0;
+    
+    // Clear thumbnail cache when switching to recent games mode
+    thumbnail_cache_valid = 0;
 
     const RecentGame* recent_list = recent_games_get_list();
     int recent_count = recent_games_get_count();
@@ -411,8 +407,8 @@ static void render_settings_menu() {
     int legend_x = SCREEN_WIDTH - legend_width - 12;
     
     // Draw legend pill with rounded corners
-    render_rounded_rect(framebuffer, legend_x - 4, legend_y - 2, legend_width + 8, 20, 10, COLOR_SELECT_BG);
-    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, legend_x, legend_y, legend, COLOR_SELECT_TEXT);
+    render_rounded_rect(framebuffer, legend_x - 4, legend_y - 2, legend_width + 8, 20, 10, COLOR_LEGEND_BG);
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, legend_x, legend_y, legend, COLOR_LEGEND);
 }
 
 // Render the menu using modular render system
