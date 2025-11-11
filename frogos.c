@@ -26,6 +26,10 @@ void (*load_and_run_core)(const char*, int*) = (void (*)(const char*, int*))0x80
 #include "recent_games.h"
 #include "settings.h"
 
+#ifndef min
+#define min(a, b) ((a) < (b) ? (a) : (b))
+#endif
+
 #define SCREEN_WIDTH 320
 #define SCREEN_HEIGHT 240
 #define MAX_ENTRIES 256
@@ -35,6 +39,17 @@ void (*load_and_run_core)(const char*, int*) = (void (*)(const char*, int*))0x80
 #define MAX_RECENT_GAMES 10
 
 // Layout constants are now in render.h
+
+// Thumbnail cache
+static Thumbnail current_thumbnail;
+static char cached_thumbnail_path[MAX_PATH_LEN];
+static int thumbnail_cache_valid = 0;
+static int last_selected_index = -1;
+
+// Text scrolling state
+static int text_scroll_frame_counter = 0;
+static int text_scroll_offset = 0;
+static int text_scroll_direction = 1;
 
 // Menu state
 typedef struct {
@@ -74,6 +89,98 @@ static bool game_queued = false;  // Flag to indicate game is queued
 static const char *get_basename(const char *path) {
     const char *base = strrchr(path, '/');
     return base ? base + 1 : path;
+}
+
+// Get scrolling display text for selected item
+static void get_scrolling_text(const char *full_name, int is_selected, char *display_name, size_t display_size) {
+    if (!full_name || !display_name) return;
+    
+    int name_len = strlen(full_name);
+    
+    // If short enough or not selected, just copy/truncate normally  
+    if (name_len <= MAX_FILENAME_DISPLAY_LEN || !is_selected) {
+        if (name_len <= MAX_FILENAME_DISPLAY_LEN) {
+            strcpy(display_name, full_name);
+        } else {
+            strncpy(display_name, full_name, MAX_FILENAME_DISPLAY_LEN);
+            display_name[MAX_FILENAME_DISPLAY_LEN] = '\0';
+            strcat(display_name, "...");
+        }
+        return;
+    }
+    
+    // Handle scrolling for selected long names
+    text_scroll_frame_counter++;
+    
+    // Wait before starting scroll
+    if (text_scroll_frame_counter < SCROLL_DELAY_FRAMES) {
+        strncpy(display_name, full_name, MAX_FILENAME_DISPLAY_LEN);
+        display_name[MAX_FILENAME_DISPLAY_LEN] = '\0';
+        return;
+    }
+    
+    // Update scroll position
+    if (text_scroll_frame_counter % SCROLL_SPEED_FRAMES == 0) {
+        text_scroll_offset += text_scroll_direction;
+        
+        // Reverse direction at ends
+        int max_scroll = name_len - MAX_FILENAME_DISPLAY_LEN;
+        if (text_scroll_offset >= max_scroll) {
+            text_scroll_direction = -1;
+            text_scroll_offset = max_scroll;
+        } else if (text_scroll_offset <= 0) {
+            text_scroll_direction = 1;
+            text_scroll_offset = 0;
+        }
+    }
+    
+    // Extract scrolled portion
+    int copy_len = min(MAX_FILENAME_DISPLAY_LEN, name_len - text_scroll_offset);
+    strncpy(display_name, full_name + text_scroll_offset, copy_len);
+    display_name[copy_len] = '\0';
+}
+
+// Load thumbnail for currently selected item
+static void load_current_thumbnail() {
+    if (selected_index < 0 || selected_index >= entry_count) {
+        thumbnail_cache_valid = 0;
+        return;
+    }
+    
+    // Only load thumbnails for files, not directories
+    if (entries[selected_index].is_dir) {
+        thumbnail_cache_valid = 0;
+        return;
+    }
+    
+    char thumb_path[MAX_PATH_LEN];
+    get_thumbnail_path(entries[selected_index].path, thumb_path, sizeof(thumb_path));
+    
+    // Check if we already have this thumbnail cached
+    if (thumbnail_cache_valid && strcmp(cached_thumbnail_path, thumb_path) == 0) {
+        return; // Already cached
+    }
+    
+    // Free previous thumbnail
+    if (thumbnail_cache_valid) {
+        free_thumbnail(&current_thumbnail);
+        thumbnail_cache_valid = 0;
+    }
+    
+    // Try to load new thumbnail
+    extern void xlog(const char *fmt, ...);
+    xlog("[FrogOS Thumbnail] Trying to load: %s\n", thumb_path);
+    
+    if (load_thumbnail(thumb_path, &current_thumbnail)) {
+        strncpy(cached_thumbnail_path, thumb_path, sizeof(cached_thumbnail_path) - 1);
+        cached_thumbnail_path[sizeof(cached_thumbnail_path) - 1] = '\0';
+        thumbnail_cache_valid = 1;
+        
+        xlog("[FrogOS Thumbnail] Loaded successfully: %s (%dx%d)\n", thumb_path, 
+             current_thumbnail.width, current_thumbnail.height);
+    } else {
+        xlog("[FrogOS Thumbnail] Failed to load: %s\n", thumb_path);
+    }
 }
 
 // Check if path is a directory - optimized to use d_type first
@@ -302,9 +409,28 @@ static void render_menu() {
         scroll_offset = selected_index - VISIBLE_ENTRIES + 1;  // Scroll down to make the item visible
     }
 
-    // Draw menu entries
+    // Load and display thumbnail for selected item FIRST (background layer)
+    // Only reload if selection changed
+    if (last_selected_index != selected_index) {
+        load_current_thumbnail();
+        last_selected_index = selected_index;
+        // Reset scrolling state for new selection
+        text_scroll_frame_counter = 0;
+        text_scroll_offset = 0;
+        text_scroll_direction = 1;
+    }
+    
+    if (thumbnail_cache_valid) {
+        render_thumbnail(framebuffer, &current_thumbnail);
+    }
+
+    // Draw menu entries ON TOP of thumbnail
     for (int i = scroll_offset; i < entry_count && i < scroll_offset + VISIBLE_ENTRIES; i++) {
-        render_menu_item(framebuffer, i, entries[i].name, entries[i].is_dir, 
+        // Get display name (with scrolling for selected item)
+        char display_name[MAX_FILENAME_DISPLAY_LEN + 4];
+        get_scrolling_text(entries[i].name, (i == selected_index), display_name, sizeof(display_name));
+        
+        render_menu_item(framebuffer, i, display_name, entries[i].is_dir, 
                         (i == selected_index), scroll_offset);
     }
 
@@ -533,6 +659,12 @@ void retro_init(void) {
 }
 
 void retro_deinit(void) {
+    // Free thumbnail cache
+    if (thumbnail_cache_valid) {
+        free_thumbnail(&current_thumbnail);
+        thumbnail_cache_valid = 0;
+    }
+    
     if (framebuffer) {
         free(framebuffer);
         framebuffer = NULL;
