@@ -306,6 +306,12 @@ static void show_tools_menu(void) {
     entries[entry_count].is_dir = 1;
     entry_count++;
     
+    // Add Credits entry
+    strncpy(entries[entry_count].name, "Credits", sizeof(entries[entry_count].name) - 1);
+    strncpy(entries[entry_count].path, "CREDITS", sizeof(entries[entry_count].path) - 1);
+    entries[entry_count].is_dir = 1;
+    entry_count++;
+    
     // Add back entry
     strncpy(entries[entry_count].name, "..", sizeof(entries[entry_count].name) - 1);
     strncpy(entries[entry_count].path, ROMS_PATH, sizeof(entries[entry_count].path) - 1);
@@ -336,6 +342,24 @@ static void show_shortcuts_screen(void) {
     scroll_offset = 0;
     
     xlog("[FrogOS] === FINISHED ENTERING SHORTCUTS SCREEN ===\n");
+}
+
+// Show credits screen
+static void show_credits_screen(void) {
+    extern void xlog(const char *fmt, ...);
+    xlog("[FrogOS] === ENTERING CREDITS SCREEN ===\n");
+    
+    // Set current_path for credits mode
+    strncpy(current_path, "CREDITS", sizeof(current_path) - 1);
+    current_path[sizeof(current_path) - 1] = '\0';
+    
+    // Clear thumbnail cache and entries for credits mode
+    thumbnail_cache_valid = 0;
+    entry_count = 0;
+    selected_index = 0;
+    scroll_offset = 0;
+    
+    xlog("[FrogOS] === FINISHED ENTERING CREDITS SCREEN ===\n");
 }
 
 // Scan directory and populate entries
@@ -511,6 +535,30 @@ static void render_shortcuts_screen() {
     font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, legend_x, legend_y, legend, COLOR_LEGEND);
 }
 
+// Render credits screen
+static void render_credits_screen() {
+    // Draw title
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, 10, "CREDITS", COLOR_HEADER);
+    
+    // Draw credits information
+    int start_y = 50;
+    int line_height = 24;
+    
+    // Credits text
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, start_y, "FrogUI idea & dev foundation: Prosty", COLOR_TEXT);
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, start_y + line_height, "OS integration: Desoxyn", COLOR_TEXT);
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, start_y + line_height * 2, "Design: Q_ta", COLOR_TEXT);
+    
+    // Draw legend
+    const char *legend = " B - BACK ";
+    int legend_y = SCREEN_HEIGHT - 24;
+    int legend_width = strlen(legend) * FONT_CHAR_SPACING;
+    int legend_x = SCREEN_WIDTH - legend_width - 12;
+    
+    render_rounded_rect(framebuffer, legend_x - 4, legend_y - 2, legend_width + 8, 20, 10, COLOR_LEGEND_BG);
+    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, legend_x, legend_y, legend, COLOR_LEGEND);
+}
+
 // Render the menu using modular render system
 static void render_menu() {
     render_clear_screen(framebuffer);
@@ -530,6 +578,12 @@ static void render_menu() {
     // If in shortcuts mode, render shortcuts screen
     if (strcmp(current_path, "SHORTCUTS") == 0) {
         render_shortcuts_screen();
+        return;
+    }
+    
+    // If in credits mode, render credits screen
+    if (strcmp(current_path, "CREDITS") == 0) {
+        render_credits_screen();
         return;
     }
 
@@ -725,6 +779,10 @@ static void handle_input() {
                 // Show shortcuts screen
                 show_shortcuts_screen();
                 strncpy(current_path, "SHORTCUTS", sizeof(current_path) - 1);
+            } else if (strcmp(entry->path, "CREDITS") == 0) {
+                // Show credits screen
+                show_credits_screen();
+                strncpy(current_path, "CREDITS", sizeof(current_path) - 1);
             } else {
                 strncpy(current_path, entry->path, sizeof(current_path) - 1);
                 scan_directory(current_path);
@@ -806,6 +864,10 @@ static void handle_input() {
             scan_directory(current_path);
         } else if (strcmp(current_path, "SHORTCUTS") == 0) {
             // Go back from Shortcuts to Tools
+            show_tools_menu();
+            strncpy(current_path, "TOOLS", sizeof(current_path) - 1);
+        } else if (strcmp(current_path, "CREDITS") == 0) {
+            // Go back from Credits to Tools
             show_tools_menu();
             strncpy(current_path, "TOOLS", sizeof(current_path) - 1);
         } else if (strcmp(current_path, ROMS_PATH) != 0) {
