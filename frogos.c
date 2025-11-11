@@ -610,7 +610,7 @@ static void render_settings_menu() {
             snprintf(value_text, sizeof(value_text), "< %s >", option->current_value);
             
             // Use unified pillbox rendering
-            render_text_pillbox(framebuffer, PADDING, y_value, value_text, COLOR_SELECT_BG, COLOR_SELECT_TEXT, 10);
+            render_text_pillbox(framebuffer, PADDING, y_value, value_text, COLOR_SELECT_BG, COLOR_SELECT_TEXT, 12);
         } else {
             font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, y_value, option->current_value, COLOR_TEXT);
         }

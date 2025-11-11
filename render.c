@@ -95,10 +95,11 @@ void render_text_pillbox(uint16_t *framebuffer, int x, int y, const char *text,
     int text_width = strlen(text) * FONT_CHAR_SPACING;
     int text_height = FONT_CHAR_HEIGHT;
     
-    // Calculate pillbox dimensions with padding
-    int pillbox_width = text_width + (padding * 2);
+    // Calculate pillbox dimensions - left padding stays at 6, right padding uses parameter
+    int left_padding = 6;
+    int pillbox_width = text_width + left_padding + padding; // padding only on right
     int pillbox_height = text_height + padding;
-    int pillbox_x = x - padding;
+    int pillbox_x = x - left_padding;
     int pillbox_y = y - (padding / 2);
     
     // Draw pillbox background
@@ -142,7 +143,7 @@ void render_menu_item(uint16_t *framebuffer, int index, const char *name, int is
     
     if (is_selected) {
         // Use unified pillbox rendering
-        render_text_pillbox(framebuffer, PADDING, y, name, COLOR_SELECT_BG, COLOR_SELECT_TEXT, 10);
+        render_text_pillbox(framebuffer, PADDING, y, name, COLOR_SELECT_BG, COLOR_SELECT_TEXT, 14);
     } else {
         // Draw normal text
         uint16_t text_color = is_dir ? COLOR_FOLDER : COLOR_TEXT;
