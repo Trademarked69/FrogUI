@@ -617,10 +617,11 @@ static void scan_directory(const char *path) {
         entries[entry_count].is_dir = 1;
         entry_count++;
     }
-    
-    // Load thumbnail for initially selected item AND reset last_selected_index to prevent duplicate loading
-    load_current_thumbnail();
-    last_selected_index = selected_index;  // Prevent render loop from detecting this as a "change"
+
+    // Defer thumbnail loading to first render for faster boot
+    // The render loop will handle loading thumbnails on the first frame
+    thumbnail_cache_valid = 0;
+    last_selected_index = -1;  // Force load on first render
 }
 
 // Render settings menu
@@ -1143,8 +1144,11 @@ void retro_init(void) {
     // Auto-launch most recent game if resume on boot is enabled
     auto_launch_recent_game();
 
-    strncpy(current_path, ROMS_PATH, sizeof(current_path) - 1);
-    scan_directory(current_path);
+    // Skip directory scan if we're auto-launching a game (faster boot)
+    if (!game_queued) {
+        strncpy(current_path, ROMS_PATH, sizeof(current_path) - 1);
+        scan_directory(current_path);
+    }
 }
 
 void retro_deinit(void) {
