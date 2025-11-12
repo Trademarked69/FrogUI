@@ -254,6 +254,18 @@ const Theme themes[] = {
         .legend = RGB565(0, 176, 204),
         .legend_bg = RGB565(8, 12, 12),
         .disabled = RGB565(0, 88, 102)
+    },
+    {
+        .name = "Desoxyn's Purple",
+        .bg = RGB565(0, 0, 0),
+        .text = RGB565(191, 64, 191),
+        .select_bg = RGB565(191, 64, 191),
+        .select_text = RGB565(0, 0, 0),
+        .header = RGB565(244, 116, 242),
+        .folder = RGB565(191, 64, 191),
+        .legend = RGB565(191, 64, 191),
+        .legend_bg = RGB565(55, 0, 59),
+        .disabled = RGB565(244, 116, 242)
     }
 };
 
