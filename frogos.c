@@ -900,25 +900,10 @@ static void handle_input() {
     if (prev_input[0] && !up) {
         if (selected_index > 0) {
             selected_index--;
-            boundary_delay_timer = 0;
-            at_boundary = 0;
         } else {
-            // At top boundary - implement delay before wrapping
-            if (at_boundary != 1) {
-                // First time hitting top boundary
-                at_boundary = 1;
-                boundary_delay_timer = BOUNDARY_DELAY_FRAMES;
-            } else if (boundary_delay_timer > 0) {
-                // Still in delay period - stay at top
-                boundary_delay_timer--;
-            } else {
-                // Delay finished - wrap to bottom
-                selected_index = entry_count - 1;
-                at_boundary = 0;
-                boundary_delay_timer = 0;
-            }
+            // Loop to the last entry when at the top
+            selected_index = entry_count - 1;
         }
-        
         // Adjust scroll_offset if necessary
         if (selected_index < scroll_offset) {
             scroll_offset = selected_index;
@@ -929,25 +914,10 @@ static void handle_input() {
     if (prev_input[1] && !down) {
         if (selected_index < entry_count - 1) {
             selected_index++;
-            boundary_delay_timer = 0;
-            at_boundary = 0;
         } else {
-            // At bottom boundary - implement delay before wrapping
-            if (at_boundary != 2) {
-                // First time hitting bottom boundary
-                at_boundary = 2;
-                boundary_delay_timer = BOUNDARY_DELAY_FRAMES;
-            } else if (boundary_delay_timer > 0) {
-                // Still in delay period - stay at bottom
-                boundary_delay_timer--;
-            } else {
-                // Delay finished - wrap to top
-                selected_index = 0;
-                at_boundary = 0;
-                boundary_delay_timer = 0;
-            }
+            // Loop to the first entry when at the bottom
+            selected_index = 0;
         }
-        
         // Adjust scroll_offset if necessary
         if (selected_index >= scroll_offset + VISIBLE_ENTRIES) {
             scroll_offset = selected_index - VISIBLE_ENTRIES + 1;
