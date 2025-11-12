@@ -197,6 +197,41 @@ static const char *get_basename(const char *path) {
     return base ? base + 1 : path;
 }
 
+// Auto-launch most recent game if resume on boot is enabled
+static void auto_launch_recent_game(void) {
+    // Check if resume on boot is enabled
+    const char *resume_setting = settings_get_value("frogui_resume_on_boot");
+    if (!resume_setting || strcmp(resume_setting, "true") != 0) {
+        return; // Feature is disabled
+    }
+
+    // Get the most recent game
+    const RecentGame *recent_list = recent_games_get_list();
+    int recent_count = recent_games_get_count();
+
+    if (recent_count == 0) {
+        return; // No recent games to launch
+    }
+
+    // Get the first (most recent) game
+    const RecentGame *game = &recent_list[0];
+    const char *core_name = game->core_name;
+    const char *filename = game->game_name;
+
+    // Queue the game for launch
+    sprintf((char *)ptr_gs_run_game_file, "/mnt/sda1/ROMS/%s;%s.gba", core_name, filename);
+    sprintf((char *)ptr_gs_run_folder, "/mnt/sda1/ROMS");
+    sprintf((char *)ptr_gs_run_game_name, "%s;%s", core_name, filename);
+
+    // Remove extension from ptr_gs_run_game_name
+    char *dot_position = strrchr(ptr_gs_run_game_name, '.');
+    if (dot_position != NULL) {
+        *dot_position = '\0';
+    }
+
+    game_queued = true;
+}
+
 // Get scrolling display text for selected item
 static void get_scrolling_text(const char *full_name, int is_selected, char *display_name, size_t display_size) {
     if (!full_name || !display_name) return;
@@ -1104,6 +1139,10 @@ void retro_init(void) {
     
     recent_games_load();
     settings_load();
+
+    // Auto-launch most recent game if resume on boot is enabled
+    auto_launch_recent_game();
+
     strncpy(current_path, ROMS_PATH, sizeof(current_path) - 1);
     scan_directory(current_path);
 }

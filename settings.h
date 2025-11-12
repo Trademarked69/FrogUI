@@ -53,4 +53,7 @@ int settings_get_selected_index(void);
 // Get current scroll offset
 int settings_get_scroll_offset(void);
 
+// Get setting value by name (returns NULL if not found)
+const char* settings_get_value(const char *setting_name);
+
 #endif // SETTINGS_H

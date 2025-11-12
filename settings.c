@@ -411,3 +411,13 @@ static void apply_theme_from_settings(void) {
         }
     }
 }
+
+// Get setting value by name
+const char* settings_get_value(const char *setting_name) {
+    for (int i = 0; i < settings_count; i++) {
+        if (strcmp(settings[i].name, setting_name) == 0) {
+            return settings[i].current_value;
+        }
+    }
+    return NULL;
+}
