@@ -944,18 +944,18 @@ static void render_menu() {
 
     // Draw A-Z picker overlay if active
     if (az_picker_active) {
-        // Draw centered background box
+        // Draw centered background box using theme background color
         int box_width = 280;
         int box_height = 180;
         int box_x = (SCREEN_WIDTH - box_width) / 2;
         int box_y = (SCREEN_HEIGHT - box_height) / 2;
-        render_fill_rect(framebuffer, box_x, box_y, box_width, box_height, 0x2104);
+        render_fill_rect(framebuffer, box_x, box_y, box_width, box_height, COLOR_BG);
 
-        // Draw title
+        // Draw title using theme colors
         const char *title = "QUICK JUMP";
         int title_width = font_measure_text(title);
         int title_x = (SCREEN_WIDTH - title_width) / 2;
-        render_text_pillbox(framebuffer, title_x, 30, title, COLOR_HEADER, COLOR_BG, 6);
+        render_text_pillbox(framebuffer, title_x, 30, title, COLOR_SELECT_BG, COLOR_SELECT_TEXT, 6);
 
         // Draw A-Z grid (7 columns x 4 rows = 28 slots)
         const char *labels[] = {
