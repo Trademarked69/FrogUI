@@ -1,6 +1,6 @@
-# FrogUI - MinUI-Style File Browser for Multicore
+# FrogUI - Minimalistic Launcher for SF2000/GB300 consoles
 
-FrogUI is a libretro core that provides a simple file browser interface for the SF2000/GB300 multicore system. It's designed to mimic the MinUI interface and allows you to browse and launch games directly from the device.
+FrogUI is a libretro-based launcher that provides a simple, clean interface for browsing and launching games on SF2000/GB300 handhelds.
 
 📦 **[Installation Guide](INSTALLATION.md)** - Start here to install FrogUI on your device
 
