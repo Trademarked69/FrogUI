@@ -102,7 +102,8 @@ static const ConsoleMapping console_mappings[] = {
     {"cavestory", "NXEngine"},
     {"o2em", "O2EM"},
     {"quake", "TyrQuake"},
-    {"arduboy", "Arduous"}
+    {"arduboy", "Arduous"},
+    {"js2000", "js2000"}
 };
 
 // Get core name for a console folder
@@ -992,21 +993,17 @@ static void handle_input() {
             
             // Check if we're in Utils - launch js2000 core
             if (strcmp(current_path, "UTILS") == 0) {
-                // Launch selected file with js2000 core
-                
-                // Remove extension from the filename for ptr_gs_run_game_name
-                char filename_no_ext[256];
-                strncpy(filename_no_ext, entry->name, sizeof(filename_no_ext) - 1);
-                char *dot_position = strrchr(filename_no_ext, '.');
+                // Launch selected file with js2000 core using format: corename;full_path
+                sprintf((char *)ptr_gs_run_game_file, "js2000;%s", entry->path);
+                sprintf((char *)ptr_gs_run_folder, "/mnt/sda1/ROMS/js2000");
+                sprintf((char *)ptr_gs_run_game_name, "%s", entry->name);
+
+                // Remove extension from game name
+                char *dot_position = strrchr(ptr_gs_run_game_name, '.');
                 if (dot_position != NULL) {
-                    *dot_position = '\0'; 
+                    *dot_position = '\0';
                 }
-                
-                // Use js2000 core to launch the selected file
-                sprintf((char *)ptr_gs_run_game_file, "/mnt/sda1/ROMS/js2000;%s.gba", filename_no_ext);
-                sprintf((char *)ptr_gs_run_folder, "/mnt/sda1/ROMS"); 
-                sprintf((char *)ptr_gs_run_game_name, "js2000;%s", filename_no_ext);
-                
+
                 game_queued = true; // Pass to retro_run, can only load the core from there
                 return;
             }
@@ -1153,7 +1150,7 @@ void retro_set_controller_port_device(unsigned port, unsigned device) {
 
 void retro_get_system_info(struct retro_system_info *info) {
     memset(info, 0, sizeof(*info));
-    info->library_name     = "FrogOS";
+    info->library_name     = "FrogUI";
     info->library_version  = "0.1";
     info->need_fullpath    = false;
     info->valid_extensions = "frogui";
