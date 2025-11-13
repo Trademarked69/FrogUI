@@ -561,8 +561,8 @@ static void scan_directory(const char *path) {
     while ((ent = readdir(dir)) != NULL && entry_count < MAX_ENTRIES) {
         if (ent->d_name[0] == '.') continue;  // Skip hidden files
 
-        // Skip frogui, js2000, and saves folders
-        if (strcasecmp(ent->d_name, "frogui") == 0 || strcasecmp(ent->d_name, "js2000") == 0 || strcasecmp(ent->d_name, "saves") == 0 || strcasecmp(ent->d_name, "save") == 0) {
+        // Skip frogui, and saves folders
+        if (strcasecmp(ent->d_name, "frogui") == 0 || strcasecmp(ent->d_name, "saves") == 0 || strcasecmp(ent->d_name, "save") == 0) {
             continue;
         }
 
@@ -994,7 +994,7 @@ static void handle_input() {
             // Check if we're in Utils - launch js2000 core
             if (strcmp(current_path, "UTILS") == 0) {
                 // Launch selected file with js2000 core using format: corename;full_path
-                sprintf((char *)ptr_gs_run_game_file, "js2000;%s", entry->path);
+                sprintf((char *)ptr_gs_run_game_file, "js2000;%s.gba", entry->path);
                 sprintf((char *)ptr_gs_run_folder, "/mnt/sda1/ROMS/js2000");
                 sprintf((char *)ptr_gs_run_game_name, "%s", entry->name);
 
