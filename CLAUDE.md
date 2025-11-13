@@ -1,8 +1,8 @@
-# FrogOS Development Guidelines
+# FrogUI Development Guidelines
 
 ## Project Overview
 
-FrogOS is a libretro-based file browser core for SF2000/GB300 handheld devices. It provides a MinUI-style interface for navigating ROM collections and launching games.
+FrogUI is a libretro-based file browser core for SF2000/GB300 handheld devices. It provides a MinUI-style interface for navigating ROM collections and launching games.
 
 ## Key Features
 
@@ -42,7 +42,7 @@ FrogOS is a libretro-based file browser core for SF2000/GB300 handheld devices. 
 ### Testing and Debugging
 - Test on actual SF2000 hardware when possible
 - Debug logs written to `/app/log.txt` during development
-- Use `tail -f /app/log.txt` to monitor real-time FrogOS logging
+- Use `tail -f /app/log.txt` to monitor real-time FrogUI logging
 - Check LOG.TXT on device for runtime debugging information
 - Verify memory usage (avoid malloc/free in critical paths)
 - Test with various ROM collections and filename lengths
