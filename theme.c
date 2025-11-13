@@ -266,6 +266,102 @@ const Theme themes[] = {
         .legend = RGB565(191, 64, 191),
         .legend_bg = RGB565(55, 0, 59),
         .disabled = RGB565(244, 116, 242)
+    },
+    {
+        .name = "Ocean",
+        .bg = RGB565(10, 25, 47),
+        .text = RGB565(100, 210, 255),
+        .select_bg = RGB565(100, 210, 255),
+        .select_text = RGB565(10, 25, 47),
+        .header = RGB565(255, 255, 255),
+        .folder = RGB565(100, 210, 255),
+        .legend = RGB565(100, 210, 255),
+        .legend_bg = RGB565(5, 15, 30),
+        .disabled = RGB565(50, 100, 150)
+    },
+    {
+        .name = "Sunset",
+        .bg = RGB565(30, 15, 50),
+        .text = RGB565(255, 140, 50),
+        .select_bg = RGB565(255, 140, 50),
+        .select_text = RGB565(30, 15, 50),
+        .header = RGB565(255, 100, 150),
+        .folder = RGB565(255, 140, 50),
+        .legend = RGB565(255, 140, 50),
+        .legend_bg = RGB565(20, 10, 35),
+        .disabled = RGB565(150, 80, 100)
+    },
+    {
+        .name = "Mono Dark",
+        .bg = RGB565(0, 0, 0),
+        .text = RGB565(255, 255, 255),
+        .select_bg = RGB565(255, 255, 255),
+        .select_text = RGB565(0, 0, 0),
+        .header = RGB565(180, 180, 180),
+        .folder = RGB565(255, 255, 255),
+        .legend = RGB565(255, 255, 255),
+        .legend_bg = RGB565(40, 40, 40),
+        .disabled = RGB565(100, 100, 100)
+    },
+    {
+        .name = "Nord",
+        .bg = RGB565(46, 52, 64),
+        .text = RGB565(136, 192, 208),
+        .select_bg = RGB565(136, 192, 208),
+        .select_text = RGB565(46, 52, 64),
+        .header = RGB565(236, 239, 244),
+        .folder = RGB565(136, 192, 208),
+        .legend = RGB565(136, 192, 208),
+        .legend_bg = RGB565(30, 35, 45),
+        .disabled = RGB565(76, 86, 106)
+    },
+    {
+        .name = "Dracula",
+        .bg = RGB565(40, 42, 54),
+        .text = RGB565(189, 147, 249),
+        .select_bg = RGB565(189, 147, 249),
+        .select_text = RGB565(40, 42, 54),
+        .header = RGB565(255, 121, 198),
+        .folder = RGB565(189, 147, 249),
+        .legend = RGB565(189, 147, 249),
+        .legend_bg = RGB565(25, 27, 38),
+        .disabled = RGB565(98, 114, 164)
+    },
+    {
+        .name = "Gruvbox",
+        .bg = RGB565(40, 40, 40),
+        .text = RGB565(250, 189, 47),
+        .select_bg = RGB565(250, 189, 47),
+        .select_text = RGB565(40, 40, 40),
+        .header = RGB565(235, 219, 178),
+        .folder = RGB565(250, 189, 47),
+        .legend = RGB565(250, 189, 47),
+        .legend_bg = RGB565(60, 56, 54),
+        .disabled = RGB565(146, 131, 116)
+    },
+    {
+        .name = "Tokyo Night",
+        .bg = RGB565(26, 27, 38),
+        .text = RGB565(115, 128, 243),
+        .select_bg = RGB565(115, 128, 243),
+        .select_text = RGB565(26, 27, 38),
+        .header = RGB565(122, 226, 230),
+        .folder = RGB565(115, 128, 243),
+        .legend = RGB565(115, 128, 243),
+        .legend_bg = RGB565(15, 15, 25),
+        .disabled = RGB565(86, 95, 137)
+    },
+    {
+        .name = "Solarized Dark",
+        .bg = RGB565(0, 43, 54),
+        .text = RGB565(131, 148, 150),
+        .select_bg = RGB565(131, 148, 150),
+        .select_text = RGB565(0, 43, 54),
+        .header = RGB565(181, 137, 0),
+        .folder = RGB565(131, 148, 150),
+        .legend = RGB565(131, 148, 150),
+        .legend_bg = RGB565(7, 54, 66),
+        .disabled = RGB565(88, 110, 117)
     }
 };
 
