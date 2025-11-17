@@ -6,6 +6,13 @@
 #include <string.h>
 #include <unistd.h>
 
+#ifdef SF2000
+#include "../../debug.h"
+#else
+// For non-SF2000 builds, use printf as fallback
+#define xlog printf
+#endif
+
 static SettingsOption settings[MAX_SETTINGS];
 static int settings_count = 0;
 static int settings_active = 0;
@@ -134,13 +141,25 @@ int settings_load(void) {
     if (test) {
         fclose(test);
         snprintf(config_path, sizeof(config_path), "/app/sdcard/configs/multicore.opt");
+        xlog("Settings: Using dev path: %s\n", config_path);
     } else {
-        // Auto-detect platform and build path
-        snprintf(config_path, sizeof(config_path), "%s/multicore.opt", get_config_directory());
+        // Try SF2000 location first: /mnt/sda1/configs/multicore.opt
+        snprintf(config_path, sizeof(config_path), "/mnt/sda1/configs/multicore.opt");
+        test = fopen(config_path, "r");
+        if (test) {
+            fclose(test);
+            xlog("Settings: Using SF2000 path: %s\n", config_path);
+        } else {
+            // Fall back to GB300 location: /mnt/sda1/cores/config/multicore.opt
+            snprintf(config_path, sizeof(config_path), "/mnt/sda1/cores/config/multicore.opt");
+            xlog("Settings: Using GB300 path: %s\n", config_path);
+        }
     }
 
     strncpy(current_config_path, config_path, sizeof(current_config_path) - 1);
-    return settings_load_file(config_path);
+    int result = settings_load_file(config_path);
+    xlog("Settings: Loaded %d settings from multicore.opt\n", result);
+    return result;
 }
 
 // Load core-specific settings
@@ -174,23 +193,32 @@ int settings_load_core(const char *core_name) {
 
 // Common settings loading function
 static int settings_load_file(const char *config_path) {
-    
+    xlog("Settings: Loading file: %s\n", config_path);
+
     FILE *fp = fopen(config_path, "r");
-    if (!fp) return 0;
-    
+    if (!fp) {
+        xlog("Settings: Failed to open file\n");
+        return 0;
+    }
+
     char line[512];
     settings_count = 0;
-    
+
     // First pass: parse comment lines to get options
     while (fgets(line, sizeof(line), fp) && settings_count < MAX_SETTINGS) {
         // Remove newline
         line[strcspn(line, "\r\n")] = 0;
-        
+
         // Parse comment lines that define options
         if (parse_option_line(line, &settings[settings_count])) {
+            xlog("Settings: Parsed option: %s = %s\n",
+                 settings[settings_count].name,
+                 settings[settings_count].current_value);
             settings_count++;
         }
     }
+
+    xlog("Settings: First pass parsed %d options\n", settings_count);
     
     // Second pass: read actual current values from setting lines
     rewind(fp);
@@ -561,74 +589,82 @@ const char* settings_get_value(const char *setting_name) {
     return NULL;
 }
 
-// Get default configs directory based on platform
+// Get default configs directory - always use /mnt/sda1/default_configs
 static const char* get_default_config_directory(void) {
-    static const char *default_dir = NULL;
-    if (!default_dir) {
-        // Check if GB300 default config directory exists
-        if (access("/mnt/sda1/cores/default_configs", 0) == 0) {
-            default_dir = "/mnt/sda1/cores/default_configs";
-        } else {
-            // Fall back to SF2000 structure
-            default_dir = "/mnt/sda1/default_configs";
-        }
-    }
-    return default_dir;
+    return "/mnt/sda1/default_configs";
 }
 
 // Reset settings to defaults by copying from default_configs
 int settings_reset_to_defaults(void) {
+    xlog("Settings: Reset to defaults called\n");
+
     if (current_config_path[0] == '\0') {
+        xlog("Settings: No config path set, aborting reset\n");
         return 0;  // No config file loaded
     }
 
     settings_saving = 1;  // Set saving flag
+    xlog("Settings: Current config path: %s\n", current_config_path);
 
-    // Determine the default config path based on current config path
+    // Determine the default config path
+    // Defaults are ALWAYS in nested structure: /mnt/sda1/default_configs/{coreName}/{coreName}.opt
     char default_path[512];
     const char *default_base = get_default_config_directory();
 
-    // Extract relative path from current config path
-    const char *config_base = get_config_directory();
-    const char *relative_path = current_config_path;
-
-    // Skip the base directory to get relative path
-    if (strncmp(current_config_path, config_base, strlen(config_base)) == 0) {
-        relative_path = current_config_path + strlen(config_base);
-        while (*relative_path == '/') relative_path++;  // Skip leading slashes
-    } else if (strncmp(current_config_path, "/app/sdcard/configs/", 20) == 0) {
-        // Handle dev machine path
-        relative_path = current_config_path + 20;
+    // Extract core name from filename
+    const char *filename = strrchr(current_config_path, '/');
+    if (filename) {
+        filename++;  // Skip '/'
+    } else {
+        filename = current_config_path;
     }
 
-    // Build default config path
-    snprintf(default_path, sizeof(default_path), "%s/%s", default_base, relative_path);
+    // Get core name by removing .opt extension
+    char core_name[256];
+    strncpy(core_name, filename, sizeof(core_name) - 1);
+    core_name[sizeof(core_name) - 1] = '\0';
+    char *ext = strstr(core_name, ".opt");
+    if (ext) {
+        *ext = '\0';
+    }
+
+    // Build path: /mnt/sda1/default_configs/{coreName}/{coreName}.opt
+    // Exception: multicore.opt stays flat
+    if (strcmp(core_name, "multicore") == 0) {
+        snprintf(default_path, sizeof(default_path), "%s/multicore.opt", default_base);
+    } else {
+        snprintf(default_path, sizeof(default_path), "%s/%s/%s.opt", default_base, core_name, core_name);
+    }
+
+    xlog("Settings: Looking for default at: %s\n", default_path);
 
     // Try to open default config file
     FILE *default_file = fopen(default_path, "r");
     if (!default_file) {
+        xlog("Settings: Default config not found\n");
         settings_saving = 0;
         return 0;  // Default config doesn't exist
     }
 
-    // Create temp file for atomic replacement
-    char temp_path[512];
-    snprintf(temp_path, sizeof(temp_path), "%s.tmp", current_config_path);
+    xlog("Settings: Found default config, overwriting current config...\n");
 
-    FILE *temp_file = fopen(temp_path, "w");
-    if (!temp_file) {
+    // Open current config for writing (this truncates the file)
+    FILE *dest_file = fopen(current_config_path, "w");
+    if (!dest_file) {
+        xlog("Settings: Failed to open config for writing\n");
         fclose(default_file);
         settings_saving = 0;
         return 0;
     }
 
-    // Copy default config to temp file
+    // Copy default config directly to current config
     char buffer[1024];
     size_t bytes;
     int copy_error = 0;
     while ((bytes = fread(buffer, 1, sizeof(buffer), default_file)) > 0) {
-        if (fwrite(buffer, 1, bytes, temp_file) != bytes) {
+        if (fwrite(buffer, 1, bytes, dest_file) != bytes) {
             copy_error = 1;
+            xlog("Settings: Write error during copy\n");
             break;
         }
     }
@@ -637,27 +673,25 @@ int settings_reset_to_defaults(void) {
 
     // Flush to ensure data is written
     if (!copy_error) {
-        if (fflush(temp_file) != 0) {
+        if (fflush(dest_file) != 0) {
             copy_error = 1;
+            xlog("Settings: Flush error\n");
         }
     }
 
-    fclose(temp_file);
+    fclose(dest_file);
 
     if (copy_error) {
-        remove(temp_path);
+        xlog("Settings: Copy failed\n");
         settings_saving = 0;
         return 0;
     }
 
-    // Atomically replace current config with default
-    if (rename(temp_path, current_config_path) != 0) {
-        remove(temp_path);
-        settings_saving = 0;
-        return 0;
-    }
+    xlog("Settings: Overwrite successful\n");
 
     settings_saving = 0;
+
+    xlog("Settings: Reset successful, reloading settings\n");
 
     // Reload settings from the reset file
     settings_load_file(current_config_path);
@@ -665,6 +699,8 @@ int settings_reset_to_defaults(void) {
     // Reset UI state to show the reloaded settings
     settings_selected = 0;
     settings_scroll_offset = 0;
+
+    xlog("Settings: Reset complete, %d settings loaded\n", settings_count);
 
     return 1;
 }
