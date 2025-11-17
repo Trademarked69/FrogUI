@@ -5,8 +5,8 @@
 
 #define MAX_SETTINGS 32
 #define MAX_OPTION_NAME_LEN 64
-#define MAX_OPTION_VALUE_LEN 32
-#define MAX_OPTION_VALUES 32
+#define MAX_OPTION_VALUE_LEN 48
+#define MAX_OPTION_VALUES 128
 
 // Settings option structure
 typedef struct {

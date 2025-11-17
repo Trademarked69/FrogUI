@@ -57,24 +57,36 @@ static int parse_option_line(const char *line, SettingsOption *option) {
     // Find option name
     const char *name_start = line + 5;
     const char *name_end = strchr(name_start, ']');
-    if (!name_end) return 0;
+    if (!name_end) {
+        xlog("Settings: Parse fail - no closing ] for name\n");
+        return 0;
+    }
 
     int name_len = name_end - name_start;
-    if (name_len >= MAX_OPTION_NAME_LEN) return 0;
+    if (name_len >= MAX_OPTION_NAME_LEN) {
+        xlog("Settings: Parse fail - name too long: %d\n", name_len);
+        return 0;
+    }
 
     strncpy(option->name, name_start, name_len);
     option->name[name_len] = '\0';
 
     // Find current value (between first : and next ])
     const char *current_start = strchr(name_end, ':');
-    if (!current_start) return 0;
+    if (!current_start) {
+        xlog("Settings: Parse fail [%s] - no colon after name\n", option->name);
+        return 0;
+    }
     current_start++; // Skip ':'
 
     // Skip whitespace and '[' if present
     while (*current_start == ' ' || *current_start == '\t' || *current_start == '[') current_start++;
 
     const char *current_end = strchr(current_start, ']');
-    if (!current_end) return 0;
+    if (!current_end) {
+        xlog("Settings: Parse fail [%s] - no ] after current value\n", option->name);
+        return 0;
+    }
 
     // Trim trailing whitespace from current value
     while (current_end > current_start && (*(current_end - 1) == ' ' || *(current_end - 1) == '\t')) {
@@ -82,26 +94,41 @@ static int parse_option_line(const char *line, SettingsOption *option) {
     }
 
     int current_len = current_end - current_start;
-    if (current_len >= MAX_OPTION_VALUE_LEN || current_len <= 0) return 0;
+    if (current_len >= MAX_OPTION_VALUE_LEN || current_len <= 0) {
+        xlog("Settings: Parse fail [%s] - current value len invalid: %d\n", option->name, current_len);
+        return 0;
+    }
 
     strncpy(option->current_value, current_start, current_len);
     option->current_value[current_len] = '\0';
     
-    // Find possible values (between [ and ])
+    // Find possible values (between [ and last ])
     const char *values_start = strchr(current_end, '[');
-    if (!values_start) return 0;
+    if (!values_start) {
+        xlog("Settings: Parse fail [%s] - no [ for values list\n", option->name);
+        return 0;
+    }
     values_start++; // Skip '['
-    
-    const char *values_end = strchr(values_start, ']');
-    if (!values_end) return 0;
-    
+
+    // Find the LAST ']' on the line (not the first one)
+    const char *values_end = strrchr(values_start, ']');
+    if (!values_end) {
+        xlog("Settings: Parse fail [%s] - no closing ] for values list\n", option->name);
+        return 0;
+    }
+
     // Parse pipe-separated values
     option->value_count = 0;
     option->current_index = 0;
-    
-    char values_str[512];
+
+    char values_str[16384];  // Increased to 16KB to handle large palette lists
     int values_len = values_end - values_start;
-    if (values_len >= sizeof(values_str)) return 0;
+    xlog("Settings: [%s] values_len=%d\n", option->name, values_len);
+    if (values_len >= sizeof(values_str)) {
+        xlog("Settings: Parse fail [%s] - value list too long (%d bytes, max %d)\n",
+             option->name, values_len, (int)sizeof(values_str));
+        return 0;
+    }
     
     strncpy(values_str, values_start, values_len);
     values_str[values_len] = '\0';
@@ -165,109 +192,218 @@ int settings_load(void) {
 // Load core-specific settings
 int settings_load_core(const char *core_name) {
     char config_path[512];
+    char core_name_lower[256];
+
+    xlog("Settings: Loading core settings for: %s\n", core_name);
+
+    // Create lowercase version of core name
+    strncpy(core_name_lower, core_name, sizeof(core_name_lower) - 1);
+    core_name_lower[sizeof(core_name_lower) - 1] = '\0';
+    for (int i = 0; core_name_lower[i]; i++) {
+        if (core_name_lower[i] >= 'A' && core_name_lower[i] <= 'Z') {
+            core_name_lower[i] = core_name_lower[i] + 32;
+        }
+    }
 
     // Try sdcard path first for dev machines - note the subdirectory structure!
-    snprintf(config_path, sizeof(config_path), "/app/sdcard/configs/%s/%s.opt", core_name, core_name);
+    // Try lowercase directory name first (more common)
+    snprintf(config_path, sizeof(config_path), "/app/sdcard/configs/%s/%s.opt", core_name_lower, core_name);
+    xlog("Settings: Trying path: %s\n", config_path);
     FILE *test = fopen(config_path, "r");
     if (test) {
         fclose(test);
+        xlog("Settings: Found config at: %s\n", config_path);
         strncpy(current_config_path, config_path, sizeof(current_config_path) - 1);
-        return settings_load_file(config_path);
+        int result = settings_load_file(config_path);
+        xlog("Settings: Loaded %d settings from core config\n", result);
+        return result;
+    }
+
+    // Try capitalized directory name
+    snprintf(config_path, sizeof(config_path), "/app/sdcard/configs/%s/%s.opt", core_name, core_name);
+    xlog("Settings: Trying path: %s\n", config_path);
+    test = fopen(config_path, "r");
+    if (test) {
+        fclose(test);
+        xlog("Settings: Found config at: %s\n", config_path);
+        strncpy(current_config_path, config_path, sizeof(current_config_path) - 1);
+        int result = settings_load_file(config_path);
+        xlog("Settings: Loaded %d settings from core config\n", result);
+        return result;
     }
 
     // Try GB300 structure first: /cores/config/{core}.opt
     const char *base_dir = get_config_directory();
     snprintf(config_path, sizeof(config_path), "%s/%s.opt", base_dir, core_name);
+    xlog("Settings: Trying path: %s\n", config_path);
     test = fopen(config_path, "r");
     if (test) {
         fclose(test);
+        xlog("Settings: Found config at: %s\n", config_path);
         strncpy(current_config_path, config_path, sizeof(current_config_path) - 1);
-        return settings_load_file(config_path);
+        int result = settings_load_file(config_path);
+        xlog("Settings: Loaded %d settings from core config\n", result);
+        return result;
     }
 
-    // Fall back to SF2000 structure: /configs/{core}/{core}.opt
+    // Fall back to SF2000 structure: /configs/{core}/{core}.opt (lowercase dir)
+    snprintf(config_path, sizeof(config_path), "%s/%s/%s.opt", base_dir, core_name_lower, core_name);
+    xlog("Settings: Trying path: %s\n", config_path);
+    test = fopen(config_path, "r");
+    if (test) {
+        fclose(test);
+        xlog("Settings: Found config at: %s\n", config_path);
+        strncpy(current_config_path, config_path, sizeof(current_config_path) - 1);
+        int result = settings_load_file(config_path);
+        xlog("Settings: Loaded %d settings from core config\n", result);
+        return result;
+    }
+
+    // Final fallback to SF2000 structure with capitalized dir
     snprintf(config_path, sizeof(config_path), "%s/%s/%s.opt", base_dir, core_name, core_name);
+    xlog("Settings: Trying path: %s\n", config_path);
     strncpy(current_config_path, config_path, sizeof(current_config_path) - 1);
-    return settings_load_file(config_path);
+    int result = settings_load_file(config_path);
+    xlog("Settings: Loaded %d settings from core config (final attempt)\n", result);
+    return result;
 }
 
 // Common settings loading function
 static int settings_load_file(const char *config_path) {
     xlog("Settings: Loading file: %s\n", config_path);
 
-    FILE *fp = fopen(config_path, "r");
+    FILE *fp = fopen(config_path, "rb");  // Binary mode to prevent newline translation
     if (!fp) {
         xlog("Settings: Failed to open file\n");
         return 0;
     }
 
-    char line[512];
+    // Read entire file into memory to bypass FILE buffering issues
+    fseek(fp, 0, SEEK_END);
+    long file_size = ftell(fp);
+    fseek(fp, 0, SEEK_SET);
+
+    xlog("Settings: File size: %ld bytes\n", file_size);
+
+    char *file_contents = (char*)malloc(file_size + 1);
+    if (!file_contents) {
+        xlog("Settings: Failed to allocate memory for file\n");
+        fclose(fp);
+        return 0;
+    }
+
+    size_t bytes_read = fread(file_contents, 1, file_size, fp);
+    file_contents[bytes_read] = '\0';
+    fclose(fp);
+
+    xlog("Settings: Read %d bytes into memory\n", (int)bytes_read);
+
+    char line[16384];
     settings_count = 0;
 
-    // First pass: parse comment lines to get options
-    while (fgets(line, sizeof(line), fp) && settings_count < MAX_SETTINGS) {
-        // Remove newline
-        line[strcspn(line, "\r\n")] = 0;
+    // Parse lines from memory
+    char *line_start = file_contents;
+    char *line_end;
 
-        // Parse comment lines that define options
-        if (parse_option_line(line, &settings[settings_count])) {
-            xlog("Settings: Parsed option: %s = %s\n",
-                 settings[settings_count].name,
-                 settings[settings_count].current_value);
-            settings_count++;
+    while (line_start < file_contents + bytes_read && settings_count < MAX_SETTINGS) {
+        // Find end of line
+        line_end = line_start;
+        while (line_end < file_contents + bytes_read && *line_end != '\n' && *line_end != '\r') {
+            line_end++;
         }
+
+        // Copy line to buffer
+        int line_len = line_end - line_start;
+        if (line_len > 0 && line_len < (int)sizeof(line)) {
+            memcpy(line, line_start, line_len);
+            line[line_len] = '\0';
+
+            // Parse comment lines that define options
+            if (parse_option_line(line, &settings[settings_count])) {
+                xlog("Settings: Parsed [%d] %s = %s (%d values)\n",
+                     settings_count,
+                     settings[settings_count].name,
+                     settings[settings_count].current_value,
+                     settings[settings_count].value_count);
+                settings_count++;
+            } else if (strncmp(line, "### [", 5) == 0) {
+                xlog("Settings: Failed to parse line (len=%d): %.80s...\n", line_len, line);
+            }
+        }
+
+        // Skip past line ending characters (\r, \n, or \r\n)
+        while (line_end < file_contents + bytes_read && (*line_end == '\n' || *line_end == '\r')) {
+            line_end++;
+        }
+        line_start = line_end;
     }
 
     xlog("Settings: First pass parsed %d options\n", settings_count);
-    
-    // Second pass: read actual current values from setting lines
-    rewind(fp);
-    while (fgets(line, sizeof(line), fp)) {
-        // Remove newline
-        line[strcspn(line, "\r\n")] = 0;
-        
-        // Skip comment lines
-        if (strncmp(line, "###", 3) == 0) continue;
-        
-        // Parse setting lines (option_name = "value")
-        char *equals = strchr(line, '=');
-        if (equals) {
-            *equals = '\0';
-            char *option_name = line;
-            char *value_start = equals + 1;
-            
-            // Trim whitespace from option name
-            while (*option_name == ' ' || *option_name == '\t') option_name++;
-            char *end = option_name + strlen(option_name) - 1;
-            while (end > option_name && (*end == ' ' || *end == '\t')) end--;
-            *(end + 1) = '\0';
-            
-            // Trim whitespace and quotes from value
-            while (*value_start == ' ' || *value_start == '\t' || *value_start == '"') value_start++;
-            end = value_start + strlen(value_start) - 1;
-            while (end > value_start && (*end == ' ' || *end == '\t' || *end == '"')) end--;
-            *(end + 1) = '\0';
-            
-            // Find matching option and update its current value
-            for (int i = 0; i < settings_count; i++) {
-                if (strcmp(settings[i].name, option_name) == 0) {
-                    strncpy(settings[i].current_value, value_start, MAX_OPTION_VALUE_LEN - 1);
-                    settings[i].current_value[MAX_OPTION_VALUE_LEN - 1] = '\0';
-                    
-                    // Update current_index to match the new value
-                    for (int j = 0; j < settings[i].value_count; j++) {
-                        if (strcmp(settings[i].possible_values[j], value_start) == 0) {
-                            settings[i].current_index = j;
+
+    // Second pass: parse actual current values from setting lines
+    line_start = file_contents;
+    while (line_start < file_contents + bytes_read && settings_count < MAX_SETTINGS) {
+        // Find end of line
+        line_end = line_start;
+        while (line_end < file_contents + bytes_read && *line_end != '\n' && *line_end != '\r') {
+            line_end++;
+        }
+
+        // Copy line to buffer
+        int line_len = line_end - line_start;
+        if (line_len > 0 && line_len < (int)sizeof(line)) {
+            memcpy(line, line_start, line_len);
+            line[line_len] = '\0';
+
+            // Skip comment lines
+            if (strncmp(line, "###", 3) != 0) {
+                // Parse setting lines (option_name = "value")
+                char *equals = strchr(line, '=');
+                if (equals) {
+                    *equals = '\0';
+                    char *option_name = line;
+                    char *value_start = equals + 1;
+
+                    // Trim whitespace from option name
+                    while (*option_name == ' ' || *option_name == '\t') option_name++;
+                    char *end = option_name + strlen(option_name) - 1;
+                    while (end > option_name && (*end == ' ' || *end == '\t')) end--;
+                    *(end + 1) = '\0';
+
+                    // Trim whitespace and quotes from value
+                    while (*value_start == ' ' || *value_start == '\t' || *value_start == '"') value_start++;
+                    end = value_start + strlen(value_start) - 1;
+                    while (end > value_start && (*end == ' ' || *end == '\t' || *end == '"')) end--;
+                    *(end + 1) = '\0';
+
+                    // Find matching option and update its current value
+                    for (int i = 0; i < settings_count; i++) {
+                        if (strcmp(settings[i].name, option_name) == 0) {
+                            strncpy(settings[i].current_value, value_start, MAX_OPTION_VALUE_LEN - 1);
+                            settings[i].current_value[MAX_OPTION_VALUE_LEN - 1] = '\0';
+
+                            // Update current_index to match the new value
+                            for (int j = 0; j < settings[i].value_count; j++) {
+                                if (strcmp(settings[i].possible_values[j], value_start) == 0) {
+                                    settings[i].current_index = j;
+                                    break;
+                                }
+                            }
                             break;
                         }
                     }
-                    break;
                 }
             }
         }
+
+        // Skip past line ending characters
+        while (line_end < file_contents + bytes_read && (*line_end == '\n' || *line_end == '\r')) {
+            line_end++;
+        }
+        line_start = line_end;
     }
-    
-    fclose(fp);
+
+    free(file_contents);
 
     // Apply theme and font changes after loading settings
     apply_theme_from_settings();
