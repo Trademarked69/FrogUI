@@ -23,19 +23,9 @@ static int settings_saving = 0;  // Flag to indicate save in progress
 // Track current config file being edited
 static char current_config_path[512] = "";
 
-// Auto-detect config directory based on platform
+// Get config directory
 static const char* get_config_directory(void) {
-	static const char *config_dir = NULL;
-	if (!config_dir) {
-		// Check if GB300 config directory exists
-		if (access("/mnt/sda1/cores/config", 0) == 0) {
-			config_dir = "/mnt/sda1/cores/config";
-		} else {
-			// Fall back to SF2000 structure
-			config_dir = "/mnt/sda1/configs";
-		}
-	}
-	return config_dir;
+	return "/mnt/sda1/configs";
 }
 
 // Forward declarations
@@ -162,25 +152,9 @@ static int parse_option_line(const char *line, SettingsOption *option) {
 int settings_load(void) {
     char config_path[512];
 
-    // For testing on dev machine, use sdcard path if it exists
-    FILE *test = fopen("/app/sdcard/configs/multicore.opt", "r");
-    if (test) {
-        fclose(test);
-        snprintf(config_path, sizeof(config_path), "/app/sdcard/configs/multicore.opt");
-        xlog("Settings: Using dev path: %s\n", config_path);
-    } else {
-        // Try SF2000 location first: /mnt/sda1/configs/multicore.opt
-        snprintf(config_path, sizeof(config_path), "/mnt/sda1/configs/multicore.opt");
-        test = fopen(config_path, "r");
-        if (test) {
-            fclose(test);
-            xlog("Settings: Using SF2000 path: %s\n", config_path);
-        } else {
-            // Fall back to GB300 location: /mnt/sda1/cores/config/multicore.opt
-            snprintf(config_path, sizeof(config_path), "/mnt/sda1/cores/config/multicore.opt");
-            xlog("Settings: Using GB300 path: %s\n", config_path);
-        }
-    }
+    // Use standard location: /mnt/sda1/configs/multicore.opt
+    snprintf(config_path, sizeof(config_path), "/mnt/sda1/configs/multicore.opt");
+    xlog("Settings: Loading from: %s\n", config_path);
 
     strncpy(current_config_path, config_path, sizeof(current_config_path) - 1);
     int result = settings_load_file(config_path);
@@ -204,9 +178,10 @@ int settings_load_core(const char *core_name) {
         }
     }
 
-    // Try sdcard path first for dev machines - note the subdirectory structure!
-    // Try lowercase directory name first (more common)
-    snprintf(config_path, sizeof(config_path), "/app/sdcard/configs/%s/%s.opt", core_name_lower, core_name);
+    const char *base_dir = get_config_directory();
+
+    // Try lowercase directory name first: /mnt/sda1/configs/{core_lower}/{core}.opt
+    snprintf(config_path, sizeof(config_path), "%s/%s/%s.opt", base_dir, core_name_lower, core_name);
     FILE *test = fopen(config_path, "r");
     if (test) {
         fclose(test);
@@ -216,45 +191,11 @@ int settings_load_core(const char *core_name) {
         return result;
     }
 
-    // Try capitalized directory name
-    snprintf(config_path, sizeof(config_path), "/app/sdcard/configs/%s/%s.opt", core_name, core_name);
-    test = fopen(config_path, "r");
-    if (test) {
-        fclose(test);
-        xlog("Settings: Found config at: %s\n", config_path);
-        strncpy(current_config_path, config_path, sizeof(current_config_path) - 1);
-        int result = settings_load_file(config_path);
-        return result;
-    }
-
-    // Try GB300 structure first: /cores/config/{core}.opt
-    const char *base_dir = get_config_directory();
-    snprintf(config_path, sizeof(config_path), "%s/%s.opt", base_dir, core_name);
-    test = fopen(config_path, "r");
-    if (test) {
-        fclose(test);
-        xlog("Settings: Found config at: %s\n", config_path);
-        strncpy(current_config_path, config_path, sizeof(current_config_path) - 1);
-        int result = settings_load_file(config_path);
-        return result;
-    }
-
-    // Fall back to SF2000 structure: /configs/{core}/{core}.opt (lowercase dir)
-    snprintf(config_path, sizeof(config_path), "%s/%s/%s.opt", base_dir, core_name_lower, core_name);
-    test = fopen(config_path, "r");
-    if (test) {
-        fclose(test);
-        xlog("Settings: Found config at: %s\n", config_path);
-        strncpy(current_config_path, config_path, sizeof(current_config_path) - 1);
-        int result = settings_load_file(config_path);
-        return result;
-    }
-
-    // Final fallback to SF2000 structure with capitalized dir
+    // Try capitalized directory name: /mnt/sda1/configs/{core}/{core}.opt
     snprintf(config_path, sizeof(config_path), "%s/%s/%s.opt", base_dir, core_name, core_name);
     strncpy(current_config_path, config_path, sizeof(current_config_path) - 1);
     int result = settings_load_file(config_path);
-    xlog("Settings: Loaded %d settings from core config (final attempt)\n", result);
+    xlog("Settings: Loaded %d settings from core config\n", result);
     return result;
 }
 

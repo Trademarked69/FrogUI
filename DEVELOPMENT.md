@@ -147,14 +147,6 @@ FrogUI/
 ## Debugging
 
 ### Debug Logs
-
-During development, debug logs are written to `/app/log.txt`:
-
-```bash
-# Monitor logs in real-time during development
-tail -f /app/log.txt
-```
-
 On the device, check `LOG.TXT` on the SD card root for runtime debugging information.
 
 ### Common Issues

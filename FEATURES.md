@@ -198,7 +198,6 @@ FrogUI supports 105+ consoles mapped to their respective cores:
 - **Smart Loading**: Only loads when selection changes
 - **Memory Efficient**: Uses static 250x200 buffer (50KB fixed allocation)
 - **Fallback**: Works if thumbnail doesn't exist (shows default background)
-- **Development Support**: Auto-maps `/mnt/sda1/` to `/app/sdcard/` on dev machines
 
 ### Thumbnail Conversion Tools
 - **Windows**: `convert_thumbnails_simple.bat`
@@ -390,11 +389,6 @@ Accessible from main menu, provides access to:
 - **multicore.opt**: Global settings including theme
 - **Core .opt files**: Core-specific emulation settings
 - **game_history.txt**: Recent games list (auto-managed)
-
-### Development Environment Support
-- **Alternative Paths**: Checks `/app/sdcard/` for testing on development machines
-- **Automatic Fallback**: Uses `/mnt/sda1/` if `/app/sdcard/` doesn't exist
-- **Core-Specific Subdirs**: `/app/sdcard/configs/[core_name]/`
 
 ---
 

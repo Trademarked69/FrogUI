@@ -221,20 +221,8 @@ int load_thumbnail(const char *rgb565_path, Thumbnail *thumb) {
     thumb->width = 0;
     thumb->height = 0;
     
-    // Use the path as-is for real device, only modify for dev environment
-    const char *path_to_use = rgb565_path;
-    char dev_path[512];
-    
-    // Only use dev path mapping in development environment (/app exists)
-    if (access("/app", F_OK) == 0 && strstr(rgb565_path, "/mnt/sda1/ROMS/")) {
-        snprintf(dev_path, sizeof(dev_path), "/app/sdcard/ROMS/%s", 
-                 rgb565_path + strlen("/mnt/sda1/ROMS/"));
-        path_to_use = dev_path;
-    } else {
-    }
-    
     // Just use the raw RGB565 loader - no parsing, no dynamic allocation
-    return load_raw_rgb565(path_to_use, thumb);
+    return load_raw_rgb565(rgb565_path, thumb);
 }
 
 // Static buffer for thumbnail - no malloc/free hell
