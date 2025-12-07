@@ -43,7 +43,7 @@ This guide covers the installation of **FrogUI** for **Datafrog SF2000** and **G
 ### 3.1 Adding ROMs
 
 1. Place **unzipped** ROMs into their respective system folders under `sd:/roms/*`
-2. Check the list of supported systems and emulators in the [Multicore repository](https://github.com/tzubertowski/gb300_multicore?tab=readme-ov-file#cores-in-this-release)
+2. Check the list of supported systems and emulators in the **[How to Use Guide](HOW_TO_USE.md#complete-supported-systems-list)**
 3. Example:
    - To add *Pokémon Fire Red*, copy the file like this:
      ```

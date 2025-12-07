@@ -11,7 +11,7 @@ FrogUI is a libretro-based launcher that provides a simple, clean interface for 
 📖 **[How to Use Guide](HOW_TO_USE.md)** - Complete setup and usage instructions
 
 ## Features
-- **60+ emulator cores**: Support for Game Boy, GBA, NES, SNES, Genesis, PlayStation, Arcade, and many more systems
+- **60+ emulator cores**: Support for Game Boy, GBA, NES, SNES, Genesis, Arcade, and [many more systems](HOW_TO_USE.md#complete-supported-systems-list)
 - **Ease of use, no additional scripts required, just drag and drop**: Simple installation and ROM management
 - **Hotkeys for Save State, Load and state index change**: Quick access to save states via hotkeys
 - **Thumbnails**: Display game preview images in RGB565 format
