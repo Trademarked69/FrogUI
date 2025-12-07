@@ -99,8 +99,8 @@ FrogUI is a modern file browser interface for the SF2000/GB300 that provides acc
 | `jnb` | Jump'n'Bump | Jump'n'Bump | game files |
 | `gong` | Pong | Gong | - |
 | **Media Players** ||||
-| `mp3` | MP3 Audio Player | FroggyMP3 | `.mp3` |
-| `videos` | Video Player | SF2000-Video-Player | `.avi`, `.mjpeg` |
+| `mp3` | MP3 Audio Player | [FroggyMP3](https://github.com/tzubertowski/froggyMP3) ([source](https://github.com/GrGadam/froggyMP3)) | `.mp3` |
+| `videos` | Video Player | [SF2000-Video-Player](https://github.com/angree/sf2000-video-player/releases/tag/v0.75-sf2000) | `.avi`, `.mjpeg` |
 | `gme` | Game Music | GME | `.nsf`, `.spc`, `.vgm`, `.gbs` |
 | `cdg` | CD+G Karaoke | PocketCDG | `.cdg` |
 
@@ -117,6 +117,34 @@ FrogUI is a modern file browser interface for the SF2000/GB300 that provides acc
 ├── mp3/                ← MP3 music files (.mp3)
 ├── videos/             ← Video files (.avi, .mjpeg)
 └── m2k/                ← Arcade ROMs (.zip)
+```
+
+## Playing Videos
+
+FrogUI includes a video player core that can play MJPEG videos on your device.
+
+### Video Requirements
+
+- **Format**: MJPEG in AVI container (`.avi`) or raw MJPEG (`.mjpeg`)
+- **Resolution**: 320×240 recommended for best performance
+- **Audio**: MP3 audio track supported
+
+### Converting Videos
+
+Videos must be converted to MJPEG format before they can be played. Use FFmpeg to convert your videos:
+
+```bash
+ffmpeg -i input.mp4 -vf "scale=320:240" -c:v mjpeg -q:v 5 -c:a mp3 -b:a 128k output.avi
+```
+
+For detailed conversion instructions and options, see the [SF2000 Video Player conversion guide](https://github.com/angree/sf2000-video-player?tab=readme-ov-file#converting-videos).
+
+### Adding Videos
+
+Place converted video files in the `videos` folder:
+```
+/ROMS/videos/my_video.avi
+/ROMS/videos/another_video.mjpeg
 ```
 
 ## Adding Thumbnails

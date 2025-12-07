@@ -97,6 +97,20 @@ bool favorites_toggle(const char *core_name, const char *game_name, const char *
     }
 }
 
+bool favorites_remove_by_index(int index) {
+    if (index < 0 || index >= favorite_count) {
+        return false;
+    }
+
+    // Shift all entries after the removed one
+    for (int i = index; i < favorite_count - 1; i++) {
+        favorites[i] = favorites[i + 1];
+    }
+    favorite_count--;
+    favorites_save();
+    return true;
+}
+
 bool favorites_is_favorited(const char *core_name, const char *game_name) {
     for (int i = 0; i < favorite_count; i++) {
         if (strcmp(favorites[i].core_name, core_name) == 0 &&

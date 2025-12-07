@@ -1130,15 +1130,21 @@ static void render_menu() {
                         (i == selected_index), scroll_offset, is_favorited);
     }
 
-    // Draw legend - show favorite button only in ROM directories
-    int in_rom_dir = (strcmp(current_path, ROMS_PATH) != 0 &&
-                      strcmp(current_path, "RECENT_GAMES") != 0 &&
-                      strcmp(current_path, "FAVORITES") != 0 &&
-                      strcmp(current_path, "TOOLS") != 0 &&
-                      strcmp(current_path, "UTILS") != 0 &&
-                      strcmp(current_path, "HOTKEYS") != 0 &&
-                      strcmp(current_path, "CREDITS") != 0);
-    render_legend(framebuffer, in_rom_dir);
+    // Draw legend - determine X button mode based on current view
+    int x_button_mode = LEGEND_X_NONE;
+    if (strcmp(current_path, "FAVORITES") == 0) {
+        // In favorites menu, show "X - REMOVE"
+        x_button_mode = LEGEND_X_REMOVE;
+    } else if (strcmp(current_path, ROMS_PATH) != 0 &&
+               strcmp(current_path, "RECENT_GAMES") != 0 &&
+               strcmp(current_path, "TOOLS") != 0 &&
+               strcmp(current_path, "UTILS") != 0 &&
+               strcmp(current_path, "HOTKEYS") != 0 &&
+               strcmp(current_path, "CREDITS") != 0) {
+        // In ROM directories, show "X - FAVOURITE"
+        x_button_mode = LEGEND_X_FAVOURITE;
+    }
+    render_legend(framebuffer, x_button_mode);
 
     // Draw the "current entry/total entries" label in top-right, above the legend
     char entry_label[20];
@@ -1495,14 +1501,37 @@ static void handle_input() {
         }
     }
 
-    // Handle X button (toggle favorite) - on button release
+    // Handle X button (toggle favorite / remove from favorites) - on button release
     if (prev_input[9] && !x && entry_count > 0) {
         MenuEntry *entry = &entries[selected_index];
 
+        // Handle removing from favorites when in FAVORITES view
+        if (strcmp(current_path, "FAVORITES") == 0) {
+            // Don't allow removing the ".." back entry
+            if (!entry->is_dir && strcmp(entry->name, "..") != 0) {
+                // Remove this favorite by index
+                favorites_remove_by_index(selected_index);
+
+                // Refresh the favorites list
+                show_favorites();
+
+                // Adjust selection if needed
+                int new_count = favorites_get_count();
+                if (new_count == 0) {
+                    selected_index = 0; // Select the ".." entry
+                } else if (selected_index >= new_count) {
+                    selected_index = new_count - 1;
+                }
+
+                // Reset scroll offset if needed
+                if (selected_index < scroll_offset) {
+                    scroll_offset = selected_index;
+                }
+            }
+        }
         // Only allow favoriting in ROM directories (not in special menus)
-        if (!entry->is_dir &&
+        else if (!entry->is_dir &&
             strcmp(current_path, "RECENT_GAMES") != 0 &&
-            strcmp(current_path, "FAVORITES") != 0 &&
             strcmp(current_path, "TOOLS") != 0 &&
             strcmp(current_path, "UTILS") != 0 &&
             strcmp(current_path, "HOTKEYS") != 0 &&

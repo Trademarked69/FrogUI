@@ -16,6 +16,7 @@ void favorites_init(void);
 void favorites_load(void);
 void favorites_save(void);
 bool favorites_toggle(const char *core_name, const char *game_name, const char *full_path);
+bool favorites_remove_by_index(int index);
 bool favorites_is_favorited(const char *core_name, const char *game_name);
 const FavoriteGame* favorites_get_list(void);
 int favorites_get_count(void);
