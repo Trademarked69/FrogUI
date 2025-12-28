@@ -111,9 +111,9 @@ bool favorites_remove_by_index(int index) {
     return true;
 }
 
-bool favorites_is_favorited(const char *core_name, const char *game_name) {
+bool favorites_is_favorited(const char *directory, const char *game_name) {
     for (int i = 0; i < favorite_count; i++) {
-        if (strcmp(favorites[i].core_name, core_name) == 0 &&
+        if (strcmp(favorites[i].full_path, directory) == 0 &&
             strcmp(favorites[i].game_name, game_name) == 0) {
             return true;
         }

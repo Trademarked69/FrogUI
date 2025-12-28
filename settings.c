@@ -1,6 +1,7 @@
 #include "settings.h"
 #include "theme.h"
 #include "font.h"
+#include "frogos.h"
 #include <stdio.h>
 #include <stdlib.h>
 #include <string.h>
@@ -284,10 +285,6 @@ static int settings_load_file(const char *config_path) {
 
     free(file_contents);
 
-    // Apply theme and font changes after loading settings
-    apply_theme_from_settings();
-    apply_font_from_settings();
-
     return settings_count;
 }
 
@@ -444,6 +441,7 @@ int settings_save(void) {
     settings_saving = 0;
 
     // Apply theme and font changes after saving settings
+    // Workaround because RETRO_ENVIRONMENT_GET_VARIABLE isn't updated 
     apply_theme_from_settings();
     apply_font_from_settings();
 
@@ -545,6 +543,7 @@ int settings_handle_input(int up, int down, int left, int right, int a, int b, i
         // Save settings and exit (don't exit until save completes)
         if (settings_save()) {
             settings_active = 0;
+            show_multicore_opt = false;
         }
         return 1;
     }
@@ -553,6 +552,7 @@ int settings_handle_input(int up, int down, int left, int right, int a, int b, i
         // Exit and save (B button should save like most settings menus)
         if (settings_save()) {
             settings_active = 0;
+            show_multicore_opt = false;
         }
         return 1;
     }

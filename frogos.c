@@ -13,6 +13,7 @@
 #ifdef SF2000
 
 #include "../../stockfw.h"
+#include "../../debug.h"
 
 // Direct call to loader - bypasses run_gba
 typedef void (*loader_func_t)(const char*, int);
@@ -32,6 +33,7 @@ static loader_func_t direct_loader = (loader_func_t)LOADER_ADDR;
 #include "recent_games.h"
 #include "favorites.h"
 #include "settings.h"
+#include "frogos.h"
 
 // Console to core name mapping (from buildcoresworking.sh)
 typedef struct {
@@ -40,6 +42,7 @@ typedef struct {
 } ConsoleMapping;
 
 static const ConsoleMapping console_mappings[] = {
+    {"menu", "FrogUI"},
     {"gb", "Gambatte"},
     {"gbb", "TGBDual"}, 
     {"gbgb", "Gearboy"},
@@ -97,6 +100,10 @@ static const ConsoleMapping console_mappings[] = {
     {"outrun", "Cannonball"},
     {"wolf3d", "ECWolf"},
     {"prboom", "PrBoom"},
+    {"doom", "PrBoom"},
+    {"doom2", "PrBoom"},
+    {"doom-plutonia", "PrBoom"},
+    {"doom-tnt", "PrBoom"},
     {"flashback", "REminiscence"},
     {"xrick", "XRick"},
     {"gw", "Game-and-Watch"},
@@ -141,8 +148,6 @@ static void show_core_settings(const char* core_name) {
 #define SCREEN_HEIGHT 240
 #define MAX_PATH_LEN 512
 #define ROMS_PATH "/mnt/sda1/ROMS"
-#define HISTORY_FILE "/mnt/sda1/game_history.txt"
-#define MAX_RECENT_GAMES 10
 #define INITIAL_ENTRIES_CAPACITY 64
 
 // Empty folders cache - avoid rescanning on every navigation
@@ -332,6 +337,64 @@ static retro_input_state_t input_state_cb = NULL;
 // Input state
 static int prev_input[16] = {0};
 static bool game_queued = false;  // Flag to indicate game is queued
+bool show_multicore_opt = false;  // Flag to indicate showing multicore.opt
+bool resume_on_boot = false;
+bool hide_empty_folders = true;
+
+void init_direct_loader(const char* core_name, const char* directory, const char* filename) {
+    // Don't set ptr_gs_run_folder - currently inherit from menu core for savestates to work
+    // TODO: Find a way to force ptr_gs_run_folder to be /mnt/sda1/ROMS or /mnt/sda1/ARCADE (unified save states folder)
+    // TODO: Replace second core_name with full directory (besides /mnt/sda1) and seperate core_name from directory
+    sprintf((char *)ptr_gs_run_game_file, "%s;%s;%s.gba", core_name, directory, filename); // Emulate a stub directory, stub doesn't have to exist (loader fixes later)
+    sprintf((char *)ptr_gs_run_game_name, "%s", filename); // Expects the filename without any extension
+
+    // Remove extension from ptr_gs_run_game_name
+    char *dot_position = strrchr(ptr_gs_run_game_name, '.');
+    if (dot_position != NULL) {
+        *dot_position = '\0';
+    }
+
+    // Add to recent history
+    recent_games_add(core_name, filename, directory);
+
+    game_queued = true; // Pass to retro_run, can only run the loader from there
+
+}
+
+// Apply settings changes
+void apply_settings(void) {
+    struct retro_variable var;
+    
+    // Load theme
+    var.key = "frogui_theme";
+    var.value = NULL;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        theme_load_from_settings(var.value);
+    }
+
+    // Load font
+    var.key = "frogui_font";
+    var.value = NULL;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        font_load_from_settings(var.value);
+    }
+
+    // Resume on boot
+    var.key = "frogui_resume_on_boot";
+    var.value = NULL;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        if (strcmp(var.value, "false") == 0) resume_on_boot = false;
+        else if (strcmp(var.value, "true") == 0) resume_on_boot = true;
+    }
+
+    // Hide empty folders
+    var.key = "frogui_hide_empty";
+    var.value = NULL;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        if (strcmp(var.value, "false") == 0) hide_empty_folders = false;
+        else if (strcmp(var.value, "true") == 0) hide_empty_folders = true;
+    }
+}
 
 // Show a loading screen during cache rebuild
 static void show_cache_rebuild_screen(void) {
@@ -357,14 +420,33 @@ static const char *get_basename(const char *path) {
     return base ? base + 1 : path;
 }
 
+static void get_corename(const char *path, char *core_name, size_t size) {
+    const char *prefix = "/mnt/sda1/ROMS/";
+    const char *start;
+    const char *end;
+
+    // Skip prefix if present
+    if (strncmp(path, prefix, strlen(prefix)) == 0)
+        start = path + strlen(prefix);
+    else
+        start = path;
+
+    // Find end of the first directory
+    end = strchr(start, '/');
+    if (!end) {
+        // No further '/', take the rest of the string
+        strncpy(core_name, start, size - 1);
+        core_name[size - 1] = '\0';
+    } else {
+        size_t len = end - start;
+        if (len >= size) len = size - 1;
+        strncpy(core_name, start, len);
+        core_name[len] = '\0';
+    }
+}
+
 // Auto-launch most recent game if resume on boot is enabled
 static void auto_launch_recent_game(void) {
-    // Check if resume on boot is enabled
-    const char *resume_setting = settings_get_value("frogui_resume_on_boot");
-    if (!resume_setting || strcmp(resume_setting, "true") != 0) {
-        return; // Feature is disabled
-    }
-
     // Get the most recent game
     const RecentGame *recent_list = recent_games_get_list();
     int recent_count = recent_games_get_count();
@@ -375,21 +457,8 @@ static void auto_launch_recent_game(void) {
 
     // Get the first (most recent) game
     const RecentGame *game = &recent_list[0];
-    const char *core_name = game->core_name;
-    const char *filename = game->game_name;
 
-    // Queue the game for launch
-    sprintf((char *)ptr_gs_run_game_file, "%s;%s;%s.gba", core_name, core_name, filename); // TODO: Replace second core_name with full directory (besides /mnt/sda1) and seperate core_name from directory
-    // Don't set ptr_gs_run_folder - inherit from menu core for savestates to work
-    sprintf((char *)ptr_gs_run_game_name, "%s", filename);
-
-    // Remove extension from ptr_gs_run_game_name
-    char *dot_position = strrchr(ptr_gs_run_game_name, '.');
-    if (dot_position != NULL) {
-        *dot_position = '\0';
-    }
-
-    game_queued = true;
+    init_direct_loader(game->core_name, game->full_path, game->game_name);
 }
 
 // Get scrolling display text for selected item
@@ -825,8 +894,7 @@ static void scan_directory(const char *path) {
 
         // Skip empty directories in root ROMS directory (use cache for speed)
         if (is_root && is_dir) {
-            const char *hide_empty = settings_get_value("frogui_hide_empty");
-            if (!hide_empty || strcmp(hide_empty, "true") == 0) {
+            if (hide_empty_folders) {
                 // Load cache on first use (default to hiding if setting not found)
                 load_empty_dirs_cache();
                 if (is_in_empty_cache(entry_name)) {
@@ -925,7 +993,16 @@ static void render_settings_menu() {
     }
 
     // Draw title
-    font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, 10, "SETTINGS", COLOR_HEADER);
+    if (show_multicore_opt) font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, 10, "MULTICORE SETTINGS", COLOR_HEADER);
+    else font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, PADDING, 10, "CORE SETTINGS", COLOR_HEADER);
+
+    // Draw the label in top-right
+    char entry_label[20];
+    snprintf(entry_label, sizeof(entry_label), "SEL - SWAP");
+    int label_width = font_measure_text(entry_label);
+    int label_x = SCREEN_WIDTH - label_width - 12;  // Right-aligned, just above the legend
+    int label_y = 8;  // Position it slightly below the top edge
+    render_text_pillbox(framebuffer, label_x, label_y, entry_label, COLOR_LEGEND_BG, COLOR_LEGEND, 6);
 
     int settings_count = settings_get_count();
     int start_y = 40;
@@ -1037,6 +1114,23 @@ static void render_credits_screen() {
     font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, legend_x, legend_y, legend, COLOR_LEGEND);
 }
 
+void clean_path(char *path)
+{
+    const char *prefix = "/mnt/sda1/ROMS/";
+    size_t len = strlen(prefix);
+
+    // remove prefix
+    if (strncmp(path, prefix, len) == 0) {
+        memmove(path, path + len, strlen(path + len) + 1);
+    }
+
+    // remove filename
+    char *last_slash = strrchr(path, '/');
+    if (last_slash) {
+        *last_slash = '\0';
+    }
+}
+
 // Render the menu using modular render system
 static void render_menu() {
     render_clear_screen(framebuffer);
@@ -1120,10 +1214,16 @@ static void render_menu() {
             strcmp(current_path, "UTILS") != 0 &&
             strcmp(current_path, "HOTKEYS") != 0 &&
             strcmp(current_path, "CREDITS") != 0) {
-            const char *core_name = get_basename(current_path);
-            const char *filename_path = strrchr(entries[i].path, '/');
-            const char *filename = filename_path ? filename_path + 1 : entries[i].name;
-            is_favorited = favorites_is_favorited(core_name, filename);
+            
+            char filename[256];
+            char directory[256];
+            strcpy(directory, entries[i].path);
+            clean_path(directory);
+            char *filename_path = strrchr(entries[i].path, '/');
+            if (filename_path) snprintf(filename, sizeof(filename), "%s", filename_path + 1);
+            else snprintf(filename, sizeof(filename), "%s", entries[i].name);
+
+            is_favorited = favorites_is_favorited(directory, filename);
         }
 
         render_menu_item(framebuffer, i, display_name, entries[i].is_dir,
@@ -1265,20 +1365,17 @@ static void pick_random_game(void) {
         for (int i = 0; i < entry_count; i++) {
             if (!entries[i].is_dir && strcmp(entries[i].name, "..") != 0) {
                 if (file_idx == random_file) {
-                    const char *core_name = get_basename(current_path);
-                    const char *filename_path = strrchr(entries[i].path, '/');
-                    const char *filename = filename_path ? filename_path + 1 : entries[i].name;
+                    char core_name[256];
+                    char filename[256];
+                    char directory[256];
+                    get_corename(entries[i].path, core_name, sizeof(core_name));
+                    strcpy(directory, entries[i].path);
+                    clean_path(directory);
+                    char *filename_path = strrchr(entries[i].path, '/');
+                    if (filename_path) snprintf(filename, sizeof(filename), "%s", filename_path + 1);
+                    else snprintf(filename, sizeof(filename), "%s", entries[i].name);
 
-                    sprintf((char *)ptr_gs_run_game_file, "%s;%s;%s.gba", core_name, core_name, filename);
-                    sprintf((char *)ptr_gs_run_game_name, "%s", filename);
-
-                    char *dot_position = strrchr(ptr_gs_run_game_name, '.');
-                    if (dot_position != NULL) {
-                        *dot_position = '\0';
-                    }
-
-                    recent_games_add(core_name, filename, entries[i].path);
-                    game_queued = true;
+                    init_direct_loader(core_name, directory, filename);
                     return;
                 }
                 file_idx++;
@@ -1288,6 +1385,276 @@ static void pick_random_game(void) {
 
     strncpy(current_path, ROMS_PATH, sizeof(current_path) - 1);
     scan_directory(current_path);
+}
+
+/* =========================
+   WAV STRUCT + HELPERS
+   ========================= */
+
+typedef struct {
+    int sample_rate;
+    int channels;
+    int bits_per_sample;
+    int num_samples;
+    uint8_t *data;
+} Wav;
+
+static int read_le32(const uint8_t *p)
+{
+    return p[0] | (p[1] << 8) | (p[2] << 16) | (p[3] << 24);
+}
+
+static int read_le16(const uint8_t *p)
+{
+    return p[0] | (p[1] << 8);
+}
+
+bool wav_load(const uint8_t *buf, size_t size, Wav *out)
+{
+    if (size < 44) return false;
+    if (memcmp(buf, "RIFF", 4) || memcmp(buf + 8, "WAVE", 4))
+        return false;
+
+    int pos = 12;
+
+    while (pos + 8 <= (int)size)
+    {
+        int chunk_size = read_le32(buf + pos + 4);
+
+        if (!memcmp(buf + pos, "fmt ", 4))
+        {
+            int format = read_le16(buf + pos + 8);
+            out->channels = read_le16(buf + pos + 10);
+            out->sample_rate = read_le32(buf + pos + 12);
+            out->bits_per_sample = read_le16(buf + pos + 22);
+            if (format != 1) return false; /* PCM only */
+        }
+        else if (!memcmp(buf + pos, "data", 4))
+        {
+            out->data = (uint8_t *)(buf + pos + 8);
+            out->num_samples = chunk_size /
+                (out->channels * (out->bits_per_sample / 8));
+            return true;
+        }
+
+        pos += 8 + chunk_size;
+    }
+
+    return false;
+}
+
+/* =========================
+   FILE LOADER
+   ========================= */
+
+bool load_file(const char *path, uint8_t **out_data, size_t *out_size)
+{
+    FILE *f = fopen(path, "rb");
+    if (!f) return false;
+
+    fseek(f, 0, SEEK_END);
+    long size = ftell(f);
+    fseek(f, 0, SEEK_SET);
+
+    uint8_t *data = (uint8_t *)malloc(size);
+    fread(data, 1, size, f);
+    fclose(f);
+
+    *out_data = data;
+    *out_size = size;
+    return true;
+}
+
+/* =========================
+   AUDIO ENGINE
+   ========================= */
+
+#define AUDIO_FRAMES 1024
+#define MAX_SFX 8
+
+typedef struct {
+    const Wav *wav;
+    int pos;
+    int volume;   /* 0–256 */
+    bool active;
+} SfxVoice;
+
+/* --- BGM --- */
+static const Wav *bgm_wav = NULL;
+static int bgm_pos = 0;
+static int bgm_volume = 128;
+static bool bgm_playing = false;
+
+/* --- SFX --- */
+static SfxVoice sfx[MAX_SFX];
+
+/* =========================
+   CONTROL FUNCTIONS
+   ========================= */
+
+void bgm_play(const Wav *wav, int volume)
+{
+    bgm_wav = wav;
+    bgm_pos = 0;
+    bgm_volume = volume;
+    bgm_playing = true;
+}
+
+void bgm_stop(void)
+{
+    bgm_playing = false;
+}
+
+void sfx_play(const Wav *wav, int volume)
+{
+    for (int i = 0; i < MAX_SFX; i++)
+    {
+        if (!sfx[i].active)
+        {
+            sfx[i].wav = wav;
+            sfx[i].pos = 0;
+            sfx[i].volume = volume;
+            sfx[i].active = true;
+            return;
+        }
+    }
+}
+
+/* =========================
+   MIXER
+   ========================= */
+
+static inline int16_t clamp16(int v)
+{
+    if (v > 32767) return 32767;
+    if (v < -32768) return -32768;
+    return v;
+}
+
+void output_wav_audio(void)
+{
+    if (!audio_batch_cb)
+        return;
+
+    int16_t buffer[AUDIO_FRAMES * 2] = {0};
+
+    for (int i = 0; i < AUDIO_FRAMES; i++)
+    {
+        int mix_l = 0;
+        int mix_r = 0;
+
+        /* --- BGM (looping) --- */
+        if (bgm_playing && bgm_wav)
+        {
+            if (bgm_pos >= bgm_wav->num_samples)
+                bgm_pos = 0;
+
+            int16_t l = 0, r = 0;
+
+            if (bgm_wav->bits_per_sample == 16)
+            {
+                int16_t *pcm = (int16_t *)bgm_wav->data;
+                if (bgm_wav->channels == 1)
+                    l = r = pcm[bgm_pos];
+                else {
+                    l = pcm[bgm_pos * 2 + 0];
+                    r = pcm[bgm_pos * 2 + 1];
+                }
+            }
+            else
+            {
+                uint8_t *pcm = bgm_wav->data;
+                if (bgm_wav->channels == 1)
+                    l = r = ((int)pcm[bgm_pos] - 128) << 8;
+                else {
+                    l = ((int)pcm[bgm_pos * 2 + 0] - 128) << 8;
+                    r = ((int)pcm[bgm_pos * 2 + 1] - 128) << 8;
+                }
+            }
+
+            mix_l += (l * bgm_volume) >> 8;
+            mix_r += (r * bgm_volume) >> 8;
+            bgm_pos++;
+        }
+
+        /* --- SFX (one-shot) --- */
+        for (int v = 0; v < MAX_SFX; v++)
+        {
+            SfxVoice *vc = &sfx[v];
+            if (!vc->active) continue;
+
+            if (vc->pos >= vc->wav->num_samples)
+            {
+                vc->active = false;
+                continue;
+            }
+
+            int16_t l = 0, r = 0;
+
+            if (vc->wav->bits_per_sample == 16)
+            {
+                int16_t *pcm = (int16_t *)vc->wav->data;
+                if (vc->wav->channels == 1)
+                    l = r = pcm[vc->pos];
+                else {
+                    l = pcm[vc->pos * 2 + 0];
+                    r = pcm[vc->pos * 2 + 1];
+                }
+            }
+            else
+            {
+                uint8_t *pcm = vc->wav->data;
+                if (vc->wav->channels == 1)
+                    l = r = ((int)pcm[vc->pos] - 128) << 8;
+                else {
+                    l = ((int)pcm[vc->pos * 2 + 0] - 128) << 8;
+                    r = ((int)pcm[vc->pos * 2 + 1] - 128) << 8;
+                }
+            }
+
+            mix_l += (l * vc->volume) >> 8;
+            mix_r += (r * vc->volume) >> 8;
+            vc->pos++;
+        }
+
+        buffer[i * 2 + 0] = clamp16(mix_l);
+        buffer[i * 2 + 1] = clamp16(mix_r);
+    }
+
+    audio_batch_cb(buffer, AUDIO_FRAMES);
+}
+
+static Wav bgm;
+static uint8_t *bgm_file;
+static size_t bgm_file_size;
+
+void audio_init(void) {
+    if (!load_file("/mnt/sda1/frogui/menu_music.wav", &bgm_file, &bgm_file_size))
+        return;
+
+    if (!wav_load(bgm_file, bgm_file_size, &bgm))
+        return;
+
+    /* Start playing immediately */
+    bgm_play(&bgm, 128);  // volume: 0–256
+}
+
+static Wav nav;
+static uint8_t *nav_file;
+static size_t nav_file_size;
+bool nav_init_once = false;
+
+void navigation_sfx(void) {
+    if (!nav_init_once) {
+        if (!load_file("/mnt/sda1/frogui/navigation.wav", &nav_file, &nav_file_size))
+            return;
+
+        if (!wav_load(nav_file, nav_file_size, &nav))
+            return;
+    
+        nav_init_once = true;
+    }
+    sfx_play(&nav, 128);  // volume: 0–256
 }
 
 // Handle input
@@ -1316,6 +1683,46 @@ static void handle_input() {
     int left = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT);
     int right = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT);
 
+    if ((prev_input[0] && !up) || (prev_input[1] && !down) || (prev_input[7] && !left) || (prev_input[8] && !right)) { // Play audio for up down left and right
+        navigation_sfx();
+    }
+
+    // Flag to determine if the menu needs to be redrawn
+    int input_changed = (prev_input[0] != up) || (prev_input[1] != down) || 
+                        (prev_input[2] != a) || (prev_input[3] != b) ||
+                        (prev_input[4] != l) || (prev_input[5] != r) || 
+                        (prev_input[6] != select) || (prev_input[7] != left) || 
+                        (prev_input[8] != right) || (prev_input[9] != x) || 
+                        (prev_input[10] != y);
+
+    // Handle SELECT button to open settings (on button release)
+    if (prev_input[6] && !select) {
+        if (settings_is_active()) show_multicore_opt = !show_multicore_opt;
+        if (show_multicore_opt) {
+            // Main menu settings - reload and show multicore.opt
+            settings_load();
+            settings_show_menu();
+        } else if (strcmp(current_path, ROMS_PATH) == 0) { 
+            show_core_settings("FrogUI");
+        } else {
+            // Check if we're in a console folder that has core-specific settings
+            char console_folder[256];
+            const char *slash = strrchr(current_path, '/');
+            if (slash && slash != current_path) {
+                // Extract folder name from path like "/mnt/sda1/ROMS/gb"
+                strcpy(console_folder, slash + 1);
+                const char *core_name = get_core_name_for_console(console_folder);
+                if (core_name) {
+                    // Show core-specific settings
+                    show_core_settings(core_name);
+                }
+            }
+        }
+        prev_input[6] = select;
+        render_menu();
+        return;
+    }
+    
     // Check if settings menu should handle input
     if (settings_handle_input(prev_input[0] && !up, prev_input[1] && !down,
                             prev_input[7] && !left, prev_input[8] && !right,
@@ -1332,6 +1739,7 @@ static void handle_input() {
         prev_input[8] = right;
         prev_input[9] = x;
         prev_input[10] = y;
+        if (input_changed) render_menu();
         return;
     }
 
@@ -1403,6 +1811,7 @@ static void handle_input() {
         prev_input[3] = b;
         prev_input[7] = left;
         prev_input[8] = right;
+        if (input_changed) render_menu();
         return;
     }
 
@@ -1419,30 +1828,6 @@ static void handle_input() {
             az_picker_active = 1;
             az_selected_index = 0;
         }
-    }
-
-    // Handle SELECT button to open settings (on button release)
-    if (prev_input[6] && !select) {
-        if (strcmp(current_path, ROMS_PATH) == 0) {
-            // Main menu settings - reload and show multicore.opt
-            settings_load();
-            settings_show_menu();
-        } else {
-            // Check if we're in a console folder that has core-specific settings
-            char console_folder[256];
-            const char *slash = strrchr(current_path, '/');
-            if (slash && slash != current_path) {
-                // Extract folder name from path like "/mnt/sda1/ROMS/gb"
-                strcpy(console_folder, slash + 1);
-                const char *core_name = get_core_name_for_console(console_folder);
-                if (core_name) {
-                    // Show core-specific settings
-                    show_core_settings(core_name);
-                }
-            }
-        }
-        prev_input[6] = select;
-        return;
     }
 
     // Handle up (on button release)
@@ -1539,12 +1924,18 @@ static void handle_input() {
             strcmp(current_path, ROMS_PATH) != 0) {
 
             // Get core name and filename
-            const char *core_name = get_basename(current_path);
-            const char *filename_path = strrchr(entry->path, '/');
-            const char *filename = filename_path ? filename_path + 1 : entry->name;
+            char core_name[256];
+            char filename[256];
+            char directory[256];
+            get_corename(entry->path, core_name, sizeof(core_name));
+            strcpy(directory, entry->path);
+            clean_path(directory);
+            char *filename_path = strrchr(entry->path, '/');
+            if (filename_path) snprintf(filename, sizeof(filename), "%s", filename_path + 1);
+            else snprintf(filename, sizeof(filename), "%s", entry->name);
 
             // Toggle favorite
-            favorites_toggle(core_name, filename, entry->path);
+            favorites_toggle(core_name, filename, directory);
         }
     }
 
@@ -1591,6 +1982,7 @@ static void handle_input() {
             } else if (strcmp(entry->path, "RANDOM_GAME") == 0) {
                 // Pick and launch a random game
                 pick_random_game();
+                render_menu();
                 return;
             } else if (strcmp(entry->path, "TOOLS") == 0) {
                 // Show tools menu
@@ -1614,8 +2006,9 @@ static void handle_input() {
             }
         } else {
             // File selected - try to launch it
-            const char *core_name;
-            const char *filename;
+            char core_name[256];
+            char filename[256];
+            char directory[256];
 
             // Check if we're in Utils
             if (strcmp(current_path, "UTILS") == 0) {
@@ -1629,17 +2022,8 @@ static void handle_input() {
                 }
 
                 // Launch selected file with js2000 core using format: corename;full_path
-                sprintf((char *)ptr_gs_run_game_file, "js2000;js2000;%s.gba", entry->name);
-                // Don't set ptr_gs_run_folder - inherit from menu core for savestates to work
-                sprintf((char *)ptr_gs_run_game_name, "%s", entry->name);
-
-                // Remove extension from game name
-                char *dot_position = strrchr(ptr_gs_run_game_name, '.');
-                if (dot_position != NULL) {
-                    *dot_position = '\0';
-                }
-
-                game_queued = true; // Pass to retro_run, can only load the core from there
+                init_direct_loader("js2000", "js2000", entry->name);
+                render_menu();
                 return;
             }
             
@@ -1647,76 +2031,71 @@ static void handle_input() {
             if (strcmp(current_path, "RECENT_GAMES") == 0) {
                 // Parse core_name;game_name from entry->path
                 char *separator = strchr(entry->path, ';');
-                if (separator) {
-                    *separator = '\0';
-                    core_name = entry->path;
-                    filename = separator + 1;
-
-                    // For recent games, get the full_path from the RecentGame structure
-                    const RecentGame* recent_list = recent_games_get_list();
-                    int recent_count = recent_games_get_count();
-                    const char* full_path = "";
-
-                    for (int i = 0; i < recent_count; i++) {
-                        if (strcmp(recent_list[i].core_name, core_name) == 0 &&
-                            strcmp(recent_list[i].game_name, filename) == 0) {
-                            full_path = recent_list[i].full_path;
-                            break;
-                        }
-                    }
-
-                    // Add to recent history (moves to top) - use actual full path
-                    recent_games_add(core_name, filename, full_path);
-                } else {
+                if (!separator) {
                     return; // Invalid format
+                }
+
+                // Copy core_name
+                size_t core_len = (size_t)(separator - entry->path);
+                if (core_len >= sizeof(core_name))
+                    core_len = sizeof(core_name) - 1;
+
+                memcpy(core_name, entry->path, core_len);
+                core_name[core_len] = '\0';
+
+                // Copy filename
+                snprintf(filename, sizeof(filename), "%s", separator + 1);
+
+                // For recent games, get the full_path from the RecentGame structure
+                const RecentGame* recent_list = recent_games_get_list();
+                int recent_count = recent_games_get_count();
+
+                for (int i = 0; i < recent_count; i++) {
+                    if (strcmp(recent_list[i].core_name, core_name) == 0 &&
+                        strcmp(recent_list[i].game_name, filename) == 0) {
+                        strcpy(directory, recent_list[i].full_path);
+                        break;
+                    }
                 }
             } else if (strcmp(current_path, "FAVORITES") == 0) {
                 // Parse core_name;game_name from entry->path
                 char *separator = strchr(entry->path, ';');
-                if (separator) {
-                    *separator = '\0';
-                    core_name = entry->path;
-                    filename = separator + 1;
-
-                    // For favorites, get the full_path from the FavoriteGame structure
-                    const FavoriteGame* favorites_list = favorites_get_list();
-                    int favorites_count = favorites_get_count();
-                    const char* full_path = "";
-
-                    for (int i = 0; i < favorites_count; i++) {
-                        if (strcmp(favorites_list[i].core_name, core_name) == 0 &&
-                            strcmp(favorites_list[i].game_name, filename) == 0) {
-                            full_path = favorites_list[i].full_path;
-                            break;
-                        }
-                    }
-
-                    // Add to recent history when launching from favorites
-                    recent_games_add(core_name, filename, full_path);
-                } else {
+                if (!separator) {
                     return; // Invalid format
+                }
+
+                // Copy core_name
+                size_t core_len = (size_t)(separator - entry->path);
+                if (core_len >= sizeof(core_name))
+                    core_len = sizeof(core_name) - 1;
+
+                memcpy(core_name, entry->path, core_len);
+                core_name[core_len] = '\0';
+
+                // Copy filename
+                snprintf(filename, sizeof(filename), "%s", separator + 1);
+
+                // For favorites, get the full_path from the FavoriteGame structure
+                const FavoriteGame* favorites_list = favorites_get_list();
+                int favorites_count = favorites_get_count();
+
+                for (int i = 0; i < favorites_count; i++) {
+                    if (strcmp(favorites_list[i].core_name, core_name) == 0 &&
+                        strcmp(favorites_list[i].game_name, filename) == 0) {
+                        strcpy(directory, favorites_list[i].full_path);
+                        break;
+                    }
                 }
             } else {
                 // Extract core name from parent directory
-                core_name = get_basename(current_path);
-                const char *filename_path = strrchr(entry->path, '/');
-                filename = filename_path ? filename_path + 1 : entry->name;
-
-                // Add to recent history - use full entry path
-                recent_games_add(core_name, filename, entry->path);
+                get_corename(entry->path, core_name, sizeof(core_name));
+                strcpy(directory, entry->path);
+                clean_path(directory);
+                char *filename_path = strrchr(entry->path, '/');
+                if (filename_path) snprintf(filename, sizeof(filename), "%s", filename_path + 1);
+                else snprintf(filename, sizeof(filename), "%s", entry->name);
             }
-
-            sprintf((char *)ptr_gs_run_game_file, "%s;%s;%s.gba", core_name, core_name, filename); // TODO: Replace second core_name with full directory (besides /mnt/sda1) and seperate core_name from directory
-            // Don't set ptr_gs_run_folder - inherit from menu core for savestates to work
-            sprintf((char *)ptr_gs_run_game_name, "%s", filename); // Expects the filename without any extension
-
-            // Remove extension from ptr_gs_run_game_name
-            char *dot_position = strrchr(ptr_gs_run_game_name, '.');
-            if (dot_position != NULL) {
-                *dot_position = '\0';
-            }
-
-            game_queued = true; // Pass to retro_run, can only load the core from there
+            init_direct_loader(core_name, directory, filename);
         }
     }
 
@@ -1803,6 +2182,8 @@ static void handle_input() {
             }
         }
     }
+    
+    if (input_changed) render_menu();
 
     // Store current state for next frame
     prev_input[0] = up;
@@ -1836,14 +2217,19 @@ void retro_init(void) {
     favorites_load();
     settings_load();
 
+    apply_settings();
+
     // Auto-launch most recent game if resume on boot is enabled
-    auto_launch_recent_game();
+    if (resume_on_boot) auto_launch_recent_game();
 
     // Skip directory scan if we're auto-launching a game (faster boot)
     if (!game_queued) {
         strncpy(current_path, ROMS_PATH, sizeof(current_path) - 1);
         scan_directory(current_path);
     }
+    
+    render_menu();
+    audio_init();
 }
 
 void retro_deinit(void) {
@@ -1931,21 +2317,17 @@ void retro_reset(void) {
 }
 
 void retro_run(void) {
+    bool updated = false;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE_UPDATE, &updated) && updated) {
+      apply_settings();
+    }
     handle_input();
-    render_menu();
+    output_wav_audio();
     if (video_cb) {
         video_cb(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH * sizeof(uint16_t));
     }
     if (game_queued) {
-        const char *stub_path = "/mnt/sda1/temp_launch.gba";
-        FILE *stub_file = fopen(stub_path, "wb");
-        if (stub_file) {
-            fwrite(ptr_gs_run_game_file, 1, strlen(ptr_gs_run_game_file), stub_file);
-            fclose(stub_file);
-        } else {
-            return;
-        }
-        direct_loader(stub_path, 0);
+        direct_loader(ptr_gs_run_game_file, 0);
         return;
     }
 }
