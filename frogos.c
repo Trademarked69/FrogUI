@@ -9,19 +9,13 @@
 #include <stdint.h>
 #include <sys/stat.h>
 #include <time.h>
+#include <ctype.h>
 
 #ifdef SF2000
-
 #include "../../stockfw.h"
 #include "../../debug.h"
-
-// Direct call to loader - bypasses run_gba
-typedef void (*loader_func_t)(const char*, int);
-#define LOADER_ADDR 0x80001500
-static loader_func_t direct_loader = (loader_func_t)LOADER_ADDR;
-
-// For SF2000, use the custom dirent implementation
-#include "../../dirent.h"
+#include "../../core.h"
+#include "../../dirent.h" // For SF2000, use the custom dirent implementation
 #else
 #include <dirent.h>
 #endif
@@ -35,95 +29,85 @@ static loader_func_t direct_loader = (loader_func_t)LOADER_ADDR;
 #include "settings.h"
 #include "frogos.h"
 
-// Console to core name mapping (from buildcoresworking.sh)
+// Console to core name mapping
 typedef struct {
-    const char *console_name;
-    const char *core_name;
+    char folder_name[64];
+    char core_name[32];      // core_name is the internal core name
+    char console_file[32];   // core file name
 } ConsoleMapping;
 
-static const ConsoleMapping console_mappings[] = {
-    {"menu", "FrogUI"},
-    {"gb", "Gambatte"},
-    {"gbb", "TGBDual"}, 
-    {"gbgb", "Gearboy"},
-    {"dblcherrygb", "DoubleCherry-GB"},
-    {"gba", "gpSP"},
-    {"gbaf", "gpSP"}, 
-    {"gbaff", "gpSP"},
-    {"gbav", "VBA-Next"},
-    {"mgba", "mGBA"},
-    {"nes", "FCEUmm"},
-    {"nesq", "QuickNES"},
-    {"nest", "Nestopia"},
-    {"snes", "Snes9x2005"},
-    {"snes02", "Snes9x2002"},
-    {"sega", "PicoDrive"},
-    {"gg", "Gearsystem"},
-    {"gpgx", "Genesis-Plus-GX"},
-    {"pce", "Beetle-PCE-Fast"},
-    {"pcesgx", "Beetle-SuperGrafx"},
-    {"pcfx", "Beetle-PCFX"},
-    {"ngpc", "RACE"},
-    {"lnx", "Handy"},
-    {"lnxb", "Beetle-Lynx"},
-    {"wswan", "Beetle-WonderSwan"},
-    {"wsv", "Potator"},
-    {"pokem", "PokeMini"},
-    {"vb", "Beetle-VB"},
-    {"a26", "Stella2014"},
-    {"a5200", "Atari5200"},
-    {"a78", "ProSystem"},
-    {"a800", "Atari800"},
-    {"int", "FreeIntv"},
-    {"col", "Gearcoleco"},
-    {"msx", "BlueMSX"},
-    {"spec", "Fuse"},
-    {"zx81", "EightyOne"},
-    {"thom", "Theodore"},
-    {"vec", "VecX"},
-    {"c64", "VICE-x64"},
-    {"c64sc", "VICE-x64sc"},
-    {"c64f", "Frodo"},
-    {"c64fc", "Frodo"},
-    {"vic20", "VICE-xvic"},
-    {"amstradb", "CAP32"},
-    {"amstrad", "CrocoDS"},
-    {"bk", "BK-Emulator"},
-    {"pc8800", "QUASI88"},
-    {"xmil", "X-Millennium"},
-    {"m2k", "MAME2000"},
-    {"chip8", "JAXE"},
-    {"fcf", "FreeChaF"},
-    {"retro8", "Retro8"},
-    {"vapor", "VaporSpec"},
-    {"gong", "Gong"},
-    {"outrun", "Cannonball"},
-    {"wolf3d", "ECWolf"},
-    {"prboom", "PrBoom"},
-    {"doom", "PrBoom"},
-    {"doom2", "PrBoom"},
-    {"doom-plutonia", "PrBoom"},
-    {"doom-tnt", "PrBoom"},
-    {"flashback", "REminiscence"},
-    {"xrick", "XRick"},
-    {"gw", "Game-and-Watch"},
-    {"cdg", "PocketCDG"},
-    {"gme", "Game-Music-Emu"},
-    {"fake08", "FAKE-08"},
-    {"lowres-nx", "LowRes-NX"},
-    {"jnb", "Jump-n-Bump"},
-    {"cavestory", "NXEngine"},
-    {"o2em", "O2EM"},
-    {"quake", "TyrQuake"},
-    {"arduboy", "Arduous"},
-    {"js2000", "js2000"}
-};
+#define MAX_MAPPINGS 256
+static ConsoleMapping console_mappings[MAX_MAPPINGS];
+size_t console_mapping_count;
+
+static char *trim(char *s) {
+    char *end;
+
+    while (isspace((unsigned char)*s)) s++;
+    if (*s == 0) return s;
+
+    end = s + strlen(s) - 1;
+    while (end > s && isspace((unsigned char)*end)) end--;
+    end[1] = '\0';
+
+    return s;
+}
+
+int load_console_mappings(const char *path) {
+    FILE *fp = fopen(path, "r");
+    if (!fp)
+        return -1; // failed to open file
+
+    char line[256];
+    console_mapping_count = 0;
+
+    while (fgets(line, sizeof(line), fp))
+    {
+        char *p1, *p2;
+        char *key, *val1, *val2;
+
+        // Skip comments and empty lines
+        char *trimmed = trim(line);
+        if (*trimmed == '\0' || *trimmed == '#')
+            continue;
+
+        // Find first '='
+        p1 = strchr(trimmed, '=');
+        if (!p1) continue;
+        *p1 = '\0';
+        key = trim(trimmed);
+
+        // Find second '='
+        p2 = strchr(p1 + 1, '=');
+        if (!p2) continue;
+        *p2 = '\0';
+        val1 = trim(p1 + 1);
+        val2 = trim(p2 + 1);
+
+        if (console_mapping_count >= MAX_MAPPINGS)
+            break;
+
+        // Copy into struct safely
+        strncpy(console_mappings[console_mapping_count].folder_name, key, sizeof(console_mappings[0].folder_name) - 1);
+        console_mappings[console_mapping_count].folder_name[sizeof(console_mappings[0].folder_name) - 1] = '\0';
+
+        strncpy(console_mappings[console_mapping_count].core_name, val1, sizeof(console_mappings[0].core_name) - 1);
+        console_mappings[console_mapping_count].core_name[sizeof(console_mappings[0].core_name) - 1] = '\0';
+
+        strncpy(console_mappings[console_mapping_count].console_file, val2, sizeof(console_mappings[0].console_file) - 1);
+        console_mappings[console_mapping_count].console_file[sizeof(console_mappings[0].console_file) - 1] = '\0';
+
+        console_mapping_count++;
+    }
+
+    fclose(fp);
+    return 0; // success
+}
 
 // Get core name for a console folder
-static const char* get_core_name_for_console(const char* console_name) {
-    int mapping_count = sizeof(console_mappings) / sizeof(console_mappings[0]);
-    for (int i = 0; i < mapping_count; i++) {
-        if (strcmp(console_mappings[i].console_name, console_name) == 0) {
+static const char* get_core_name_for_console(const char* folder_name) {
+    for (size_t i = 0; i < console_mapping_count; i++) {
+        if (strcmp(console_mappings[i].folder_name, folder_name) == 0) {
             return console_mappings[i].core_name;
         }
     }
@@ -340,6 +324,10 @@ static bool game_queued = false;  // Flag to indicate game is queued
 bool show_multicore_opt = false;  // Flag to indicate showing multicore.opt
 bool resume_on_boot = false;
 bool hide_empty_folders = true;
+bool prevent_scrolling = false;
+bool bgm_enabled = true;
+bool sfx_enabled = true;
+
 
 void init_direct_loader(const char* core_name, const char* directory, const char* filename) {
     // Don't set ptr_gs_run_folder - currently inherit from menu core for savestates to work
@@ -394,6 +382,30 @@ void apply_settings(void) {
         if (strcmp(var.value, "false") == 0) hide_empty_folders = false;
         else if (strcmp(var.value, "true") == 0) hide_empty_folders = true;
     }
+
+    // Prevent scrolling
+    var.key = "frogui_prevent_scrolling";
+    var.value = NULL;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        if (strcmp(var.value, "false") == 0) prevent_scrolling = false;
+        else if (strcmp(var.value, "true") == 0) prevent_scrolling = true;
+    }
+
+    // Enable BGM
+    var.key = "frogui_bgm_enabled";
+    var.value = NULL;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        if (strcmp(var.value, "false") == 0) bgm_enabled = false;
+        else if (strcmp(var.value, "true") == 0) bgm_enabled = true;
+    }
+
+    // Enable SFX
+    var.key = "frogui_sfx_enabled";
+    var.value = NULL;
+    if (environ_cb(RETRO_ENVIRONMENT_GET_VARIABLE, &var) && var.value) {
+        if (strcmp(var.value, "false") == 0) sfx_enabled = false;
+        else if (strcmp(var.value, "true") == 0) sfx_enabled = true;
+    }
 }
 
 // Show a loading screen during cache rebuild
@@ -420,10 +432,12 @@ static const char *get_basename(const char *path) {
     return base ? base + 1 : path;
 }
 
+// Get console_file (or folder_name if not found) from a full ROM path
 static void get_corename(const char *path, char *core_name, size_t size) {
     const char *prefix = "/mnt/sda1/ROMS/";
     const char *start;
     const char *end;
+    char folder[64];
 
     // Skip prefix if present
     if (strncmp(path, prefix, strlen(prefix)) == 0)
@@ -435,14 +449,27 @@ static void get_corename(const char *path, char *core_name, size_t size) {
     end = strchr(start, '/');
     if (!end) {
         // No further '/', take the rest of the string
-        strncpy(core_name, start, size - 1);
-        core_name[size - 1] = '\0';
+        strncpy(folder, start, sizeof(folder) - 1);
+        folder[sizeof(folder) - 1] = '\0';
     } else {
         size_t len = end - start;
-        if (len >= size) len = size - 1;
-        strncpy(core_name, start, len);
-        core_name[len] = '\0';
+        if (len >= sizeof(folder)) len = sizeof(folder) - 1;
+        strncpy(folder, start, len);
+        folder[len] = '\0';
     }
+
+    // Lookup console_file in console_mappings
+    const char *console_file = folder; // default
+    for (size_t i = 0; i < console_mapping_count; i++) {
+        if (strcmp(console_mappings[i].folder_name, folder) == 0) {
+            console_file = console_mappings[i].console_file;
+            break;
+        }
+    }
+
+    // Copy the result into core_name
+    strncpy(core_name, console_file, size - 1);
+    core_name[size - 1] = '\0';
 }
 
 // Auto-launch most recent game if resume on boot is enabled
@@ -467,6 +494,13 @@ static void get_scrolling_text(const char *full_name, int is_selected, char *dis
 
     int name_len = strlen(full_name);
 
+    static char padded_name[512];
+    const int leading_gap_spaces = 3;
+    const int trailing_gap_spaces = 2;
+    snprintf(padded_name, sizeof(padded_name), "%*s%s%*s", leading_gap_spaces, "", full_name, trailing_gap_spaces, "");
+    const char *scroll_text = padded_name;
+    int scroll_len = strlen(scroll_text);
+
     // Check if we're in main menu or special views (no thumbnails)
     int in_main_menu = (strcmp(current_path, ROMS_PATH) == 0 ||
                         strcmp(current_path, "RECENT_GAMES") == 0 ||
@@ -477,11 +511,11 @@ static void get_scrolling_text(const char *full_name, int is_selected, char *dis
                         strcmp(current_path, "CREDITS") == 0);
 
     // Use different max lengths: shorter for unselected items only in ROM lists (with thumbnails)
-    int max_len = is_selected ? MAX_FILENAME_DISPLAY_LEN :
-                  (in_main_menu ? MAX_FILENAME_DISPLAY_LEN : MAX_UNSELECTED_DISPLAY_LEN);
+    int max_len = 30;
+    if (thumbnail_cache_valid) max_len = is_selected ? MAX_FILENAME_DISPLAY_LEN : (in_main_menu ? MAX_FILENAME_DISPLAY_LEN : MAX_UNSELECTED_DISPLAY_LEN);
 
     // If short enough or not selected, just copy/truncate normally
-    if (name_len <= max_len || !is_selected) {
+    if ((name_len <= max_len || !is_selected) || (prevent_scrolling)) {
         if (name_len <= max_len) {
             strcpy(display_name, full_name);
         } else {
@@ -497,8 +531,8 @@ static void get_scrolling_text(const char *full_name, int is_selected, char *dis
     
     // Wait before starting scroll
     if (text_scroll_frame_counter < SCROLL_DELAY_FRAMES) {
-        strncpy(display_name, full_name, MAX_FILENAME_DISPLAY_LEN);
-        display_name[MAX_FILENAME_DISPLAY_LEN] = '\0';
+        strncpy(display_name, scroll_text, max_len);
+        display_name[max_len] = '\0';
         return;
     }
     
@@ -507,7 +541,7 @@ static void get_scrolling_text(const char *full_name, int is_selected, char *dis
         text_scroll_offset += text_scroll_direction;
         
         // Reverse direction at ends
-        int max_scroll = name_len - MAX_FILENAME_DISPLAY_LEN;
+        int max_scroll = scroll_len - max_len;
         if (text_scroll_offset >= max_scroll) {
             text_scroll_direction = -1;
             text_scroll_offset = max_scroll;
@@ -518,8 +552,8 @@ static void get_scrolling_text(const char *full_name, int is_selected, char *dis
     }
     
     // Extract scrolled portion
-    int copy_len = min(MAX_FILENAME_DISPLAY_LEN, name_len - text_scroll_offset);
-    strncpy(display_name, full_name + text_scroll_offset, copy_len);
+    int copy_len = min(max_len, scroll_len - text_scroll_offset);
+    strncpy(display_name, scroll_text + text_scroll_offset, copy_len);
     display_name[copy_len] = '\0';
 }
 
@@ -537,6 +571,7 @@ static void load_current_thumbnail() {
     }
     
     char thumb_path[MAX_PATH_LEN];
+    char file_path[MAX_PATH_LEN];
     
     // Check if we're in Recent games mode
     if (strcmp(current_path, "RECENT_GAMES") == 0) {
@@ -548,7 +583,7 @@ static void load_current_thumbnail() {
             const RecentGame *recent_game = &recent_list[selected_index];
 
             if (recent_game->full_path[0] != '\0') {
-                get_thumbnail_path(recent_game->full_path, thumb_path, sizeof(thumb_path));
+                snprintf(file_path, sizeof(file_path), "/mnt/sda1/ROMS/%s/%s", recent_game->full_path, recent_game->game_name);
             } else {
                 // No full path available, skip thumbnail
                 thumbnail_cache_valid = 0;
@@ -568,7 +603,7 @@ static void load_current_thumbnail() {
             const FavoriteGame *favorite_game = &favorites_list[selected_index];
 
             if (favorite_game->full_path[0] != '\0') {
-                get_thumbnail_path(favorite_game->full_path, thumb_path, sizeof(thumb_path));
+                snprintf(file_path, sizeof(file_path), "/mnt/sda1/ROMS/%s/%s", favorite_game->full_path, favorite_game->game_name);
             } else {
                 // No full path available, skip thumbnail
                 thumbnail_cache_valid = 0;
@@ -581,13 +616,16 @@ static void load_current_thumbnail() {
         }
     } else {
         // Regular file browser mode
-        get_thumbnail_path(entries[selected_index].path, thumb_path, sizeof(thumb_path));
+        strncpy(file_path, entries[selected_index].path, sizeof(file_path) - 1);
     }
-    
+    get_thumbnail_path(file_path, thumb_path, sizeof(thumb_path));
+
+    bool is_wqw = false;
+    is_zip_wqw_file(file_path, &is_wqw);
+
     // Check if we already have this thumbnail cached
-    if (thumbnail_cache_valid && strcmp(cached_thumbnail_path, thumb_path) == 0) {
-        return; // Already cached
-    }
+    if (thumbnail_cache_valid && strcmp(cached_thumbnail_path, thumb_path) == 0) return; // Already cached 
+    if ((is_wqw) && (thumbnail_cache_valid && strcmp(cached_thumbnail_path, file_path) == 0)) return; // Already cached
     
     // Free previous thumbnail
     if (thumbnail_cache_valid) {
@@ -600,8 +638,24 @@ static void load_current_thumbnail() {
         strncpy(cached_thumbnail_path, thumb_path, sizeof(cached_thumbnail_path) - 1);
         cached_thumbnail_path[sizeof(cached_thumbnail_path) - 1] = '\0';
         thumbnail_cache_valid = 1;
-        
-    } else {
+    }
+
+    if (!thumbnail_cache_valid && is_wqw) {
+        uint16_t *wqw_image_buffer = malloc(g_preview_width * g_preview_height * sizeof(uint16_t));
+        if (!wqw_image_buffer) return; // malloc failed
+
+        if (load_rgb565_image(file_path, wqw_image_buffer, g_preview_width, g_preview_height) != 0) {
+            free(wqw_image_buffer);
+            return;
+        }
+
+        current_thumbnail.data = wqw_image_buffer;
+        current_thumbnail.width = g_preview_width;
+        current_thumbnail.height = g_preview_height;
+
+        strncpy(cached_thumbnail_path, file_path, sizeof(cached_thumbnail_path) - 1);
+        cached_thumbnail_path[sizeof(cached_thumbnail_path) - 1] = '\0';
+        thumbnail_cache_valid = 1;
     }
 }
 
@@ -1131,8 +1185,76 @@ void clean_path(char *path)
     }
 }
 
+typedef struct {
+    char display_name[256]; // currently rendered scrolling text
+    int scroll_offset;      // current scroll offset in pixels
+    int scroll_direction;   // 1 = forward, -1 = backward
+    uint32_t last_scroll_time;
+    int valid;              // flag to indicate state is valid
+} ScrollingTextState;
+
+ScrollingTextState selected_item_scroll;
+#define SCROLL_DELAY_MS 500   // milliseconds per scroll step
+#define MAX_TEXT_WIDTH 200    // width in pixels of the menu text area
+
+void update_selected_item_scroll() {
+    if (selected_index < 0 || selected_index >= entry_count) return;
+
+    const char *text = entries[selected_index].name;
+    int text_width = font_measure_text(text);
+
+    // If text fits, no scroll needed
+    if (text_width <= MAX_TEXT_WIDTH) {
+        strcpy(selected_item_scroll.display_name, text);
+        selected_item_scroll.scroll_offset = 0;
+        selected_item_scroll.scroll_direction = 1;
+        selected_item_scroll.last_scroll_time = os_get_tick_count();
+        selected_item_scroll.valid = 1;
+        return;
+    }
+
+    // Get current time in ms
+    uint32_t now = os_get_tick_count();
+
+    // Update offset if enough time has passed
+    if (now - selected_item_scroll.last_scroll_time >= SCROLL_DELAY_MS) {
+        selected_item_scroll.last_scroll_time = now;
+        selected_item_scroll.scroll_offset += selected_item_scroll.scroll_direction;
+
+        // Reverse direction when text reaches bounds
+        if (selected_item_scroll.scroll_offset + MAX_TEXT_WIDTH >= text_width) {
+            selected_item_scroll.scroll_direction = -1;
+        } else if (selected_item_scroll.scroll_offset <= 0) {
+            selected_item_scroll.scroll_direction = 1;
+        }
+    }
+
+    // Update the displayed scrolling text
+    get_scrolling_text(text, 1, selected_item_scroll.display_name, sizeof(selected_item_scroll.display_name));
+    selected_item_scroll.valid = 1;
+}
+
+void render_selected_item_text() {
+    if (!selected_item_scroll.valid) return;
+    if (selected_index < scroll_offset || selected_index >= scroll_offset + VISIBLE_ENTRIES) return;
+
+    int is_favorited = 0;
+    char filename[256];
+    char directory[256];
+    strcpy(directory, entries[selected_index].path);
+    clean_path(directory);
+    char *filename_path = strrchr(entries[selected_index].path, '/');
+    snprintf(filename, sizeof(filename), "%s", filename_path ? filename_path + 1 : entries[selected_index].name);
+    is_favorited = favorites_is_favorited(directory, filename);
+    render_menu_item(framebuffer, selected_index, selected_item_scroll.display_name, entries[selected_index].is_dir, 1, scroll_offset, is_favorited);
+}
+
+static bool block_scrolling = false;
+static uint32_t scrolling_delay_time = 0;
+
 // Render the menu using modular render system
 static void render_menu() {
+    block_scrolling = true;
     render_clear_screen(framebuffer);
 
     // If game is queued, just show loading screen
@@ -1201,7 +1323,7 @@ static void render_menu() {
     // Draw menu entries ON TOP of thumbnail
     for (int i = scroll_offset; i < entry_count && i < scroll_offset + VISIBLE_ENTRIES; i++) {
         // Get display name (with scrolling for selected item)
-        char display_name[MAX_FILENAME_DISPLAY_LEN + 4];
+        char display_name[256];
         get_scrolling_text(entries[i].name, (i == selected_index), display_name, sizeof(display_name));
 
         // Check if this item is favorited
@@ -1226,8 +1348,7 @@ static void render_menu() {
             is_favorited = favorites_is_favorited(directory, filename);
         }
 
-        render_menu_item(framebuffer, i, display_name, entries[i].is_dir,
-                        (i == selected_index), scroll_offset, is_favorited);
+        render_menu_item(framebuffer, i, display_name, entries[i].is_dir, (i == selected_index), scroll_offset, is_favorited);
     }
 
     // Draw legend - determine X button mode based on current view
@@ -1294,6 +1415,9 @@ static void render_menu() {
                 font_draw_text(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, x, y, labels[i], COLOR_TEXT);
             }
         }
+    } else {
+        scrolling_delay_time = os_get_tick_count();
+        block_scrolling = false;
     }
 }
 
@@ -1629,11 +1753,15 @@ static uint8_t *bgm_file;
 static size_t bgm_file_size;
 
 void audio_init(void) {
-    if (!load_file("/mnt/sda1/frogui/menu_music.wav", &bgm_file, &bgm_file_size))
+    if (!load_file("/mnt/sda1/frogui/menu_music.wav", &bgm_file, &bgm_file_size)) {
+        bgm_enabled = false;
         return;
+    }
 
-    if (!wav_load(bgm_file, bgm_file_size, &bgm))
+    if (!wav_load(bgm_file, bgm_file_size, &bgm)) {
+        bgm_enabled = false;
         return;
+    }
 
     /* Start playing immediately */
     bgm_play(&bgm, 128);  // volume: 0–256
@@ -1646,16 +1774,23 @@ bool nav_init_once = false;
 
 void navigation_sfx(void) {
     if (!nav_init_once) {
-        if (!load_file("/mnt/sda1/frogui/navigation.wav", &nav_file, &nav_file_size))
+        if (!load_file("/mnt/sda1/frogui/navigation.wav", &nav_file, &nav_file_size)) {
+            sfx_enabled = false;
             return;
+        }
 
-        if (!wav_load(nav_file, nav_file_size, &nav))
+        if (!wav_load(nav_file, nav_file_size, &nav)) {
+            sfx_enabled = false;
             return;
+        }
     
         nav_init_once = true;
     }
     sfx_play(&nav, 128);  // volume: 0–256
 }
+
+static unsigned long last_input_time = 0;  // Store the time when input was last processed
+static const unsigned long input_delay_ms = 320;  // Input delay in milliseconds (to prevent too fast of inputs causing low fps)
 
 // Handle input
 static void handle_input() {
@@ -1683,8 +1818,16 @@ static void handle_input() {
     int left = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_LEFT);
     int right = input_state_cb(0, RETRO_DEVICE_JOYPAD, 0, RETRO_DEVICE_ID_JOYPAD_RIGHT);
 
+    // Get the current time in milliseconds
+    unsigned long current_time = os_get_tick_count();
+
+    if ((current_time - last_input_time < input_delay_ms) && ((prev_input[0] && !up) || (prev_input[1] && !down) || (prev_input[7] && !left) || (prev_input[8] && !right))) {
+        return;  // Skip input processing if the delay hasn't passed yet
+    }
+
     if ((prev_input[0] && !up) || (prev_input[1] && !down) || (prev_input[7] && !left) || (prev_input[8] && !right)) { // Play audio for up down left and right
-        navigation_sfx();
+        if (sfx_enabled) navigation_sfx();
+        last_input_time = current_time;
     }
 
     // Flag to determine if the menu needs to be redrawn
@@ -2200,6 +2343,7 @@ static void handle_input() {
 
 // Libretro API implementation
 void retro_init(void) {
+    strcpy(ptr_gs_run_game_name, "FrogUI"); // Sets the name for the pause menu
     framebuffer = (uint16_t*)malloc(SCREEN_WIDTH * SCREEN_HEIGHT * sizeof(uint16_t));
 
     // Seed random number generator for random game picker
@@ -2212,24 +2356,13 @@ void retro_init(void) {
     recent_games_init();
     favorites_init();
     settings_init();
+    load_console_mappings("/mnt/sda1/frogui/console_mappings.opt");
 
     recent_games_load();
     favorites_load();
     settings_load();
 
     apply_settings();
-
-    // Auto-launch most recent game if resume on boot is enabled
-    if (resume_on_boot) auto_launch_recent_game();
-
-    // Skip directory scan if we're auto-launching a game (faster boot)
-    if (!game_queued) {
-        strncpy(current_path, ROMS_PATH, sizeof(current_path) - 1);
-        scan_directory(current_path);
-    }
-    
-    render_menu();
-    audio_init();
 }
 
 void retro_deinit(void) {
@@ -2266,7 +2399,7 @@ void retro_get_system_info(struct retro_system_info *info) {
     memset(info, 0, sizeof(*info));
     info->library_name     = "FrogUI";
     info->library_version  = "0.1";
-    info->need_fullpath    = false;
+    info->need_fullpath    = true;
     info->valid_extensions = "frogui";
 }
 
@@ -2322,18 +2455,43 @@ void retro_run(void) {
       apply_settings();
     }
     handle_input();
-    output_wav_audio();
+    if ((os_get_tick_count() - scrolling_delay_time > 500) && (!block_scrolling) && (!prevent_scrolling)) {
+        update_selected_item_scroll();
+        render_selected_item_text();
+    }
+    if (bgm_enabled || sfx_enabled) output_wav_audio();
     if (video_cb) {
         video_cb(framebuffer, SCREEN_WIDTH, SCREEN_HEIGHT, SCREEN_WIDTH * sizeof(uint16_t));
     }
     if (game_queued) {
-        direct_loader(ptr_gs_run_game_file, 0);
+        // Because the loader checks ptr_gs_run_game_file directly it doesn't matter what we pass to run_game (aslong as it's a gba file)
+        // TODO: Add support for stock cores, tbh only ARCADE matters, we should list games from /ARCADE and pass those directly to run_game
+        // Pass to core_api as a workaround so we can unload game and deinit
+        wrap_run_game("/mnt/sda1/ROMS/menu;m.gba", 0);
         return;
     }
 }
 
 bool retro_load_game(const struct retro_game_info *info) {
-    (void)info;
+    if (info && info->path) {
+        // If label is not available, fallback to using the file name from the path
+        const char *game_name = strrchr(info->path, '/');
+        if (game_name) {
+            game_name++; // Move past the '/' character
+            // Auto-launch most recent game if resume on boot is enabled and we aren't loading from the pause menu
+            if ((strcmp(game_name, "p") != 0) && (resume_on_boot)) auto_launch_recent_game();
+
+        }
+    }
+
+    // Skip directory scan if we're auto-launching a game (faster boot)
+    if (!game_queued) {
+        strncpy(current_path, ROMS_PATH, sizeof(current_path) - 1);
+        scan_directory(current_path);
+    }
+    
+    render_menu();
+    if (bgm_enabled) audio_init();
     return true;
 }
 

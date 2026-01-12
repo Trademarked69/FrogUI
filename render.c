@@ -7,6 +7,12 @@
 #include <math.h>
 #include <unistd.h>
 #include <dirent.h>
+#include <stdbool.h>
+
+#ifdef SF2000
+#include "../../debug.h"
+#include "../../core.h"
+#endif
 
 #ifndef min
 #define min(a, b) ((a) < (b) ? (a) : (b))
@@ -167,7 +173,6 @@ void render_menu_item(uint16_t *framebuffer, int index, const char *name, int is
 }
 
 // Thumbnail implementation
-
 void get_thumbnail_path(const char *game_path, char *thumb_path, size_t thumb_path_size) {
     if (!game_path || !thumb_path || game_path[0] == '\0') {
         thumb_path[0] = '\0';
@@ -209,78 +214,70 @@ void get_thumbnail_path(const char *game_path, char *thumb_path, size_t thumb_pa
     strncat(thumb_path, ".rgb565", thumb_path_size - strlen(thumb_path) - 1);
 }
 
-static uint16_t rgb24_to_rgb565(uint8_t r, uint8_t g, uint8_t b) {
-    return ((r >> 3) << 11) | ((g >> 2) << 5) | (b >> 3);
-}
+int load_thumbnail(const char *rgb565_path, Thumbnail *thumb)
+{
+    if (!rgb565_path || !thumb)
+        return 0;
 
-int load_thumbnail(const char *rgb565_path, Thumbnail *thumb) {
-    if (!rgb565_path || !thumb) return 0;
-    
-    // Initialize thumbnail
     thumb->data = NULL;
     thumb->width = 0;
     thumb->height = 0;
-    
-    // Just use the raw RGB565 loader - no parsing, no dynamic allocation
-    return load_raw_rgb565(rgb565_path, thumb);
-}
 
-// Static buffer for thumbnail - no malloc/free hell
-static uint16_t thumbnail_buffer[250 * 200]; // Max size: 250x200
+    // Check file exists and get size
+    FILE *fp = fopen(rgb565_path, "rb");
+    if (!fp)
+        return 0;
 
-int load_raw_rgb565(const char *path, Thumbnail *thumb) {
-    // Check if file exists
-    if (access(path, F_OK) != 0) {
-        return 0;
-    }
-    
-    FILE *fp = fopen(path, "rb");
-    if (!fp) {
-        return 0;
-    }
-    
     fseek(fp, 0, SEEK_END);
     long file_size = ftell(fp);
-    fseek(fp, 0, SEEK_SET);
-    
-    
-    // Try common dimensions - including 160x160 for the resized images
-    int dimensions[][2] = {{64,64}, {128,128}, {160,160}, {200,200}, {250,200}, {200,250}};
-    int num_dims = sizeof(dimensions) / sizeof(dimensions[0]);
-    
-    for (int i = 0; i < num_dims; i++) {
+    fclose(fp);
+
+    if (file_size <= 0)
+        return 0;
+
+    // Known RGB565 dimensions
+    const int dimensions[][2] = {
+        {64, 64},
+        {128, 128},
+        {144, 208}, // WQW default
+        {160, 160},
+        {200, 200},
+        {250, 200},
+        {200, 250}
+    };
+
+    const int num_dims = sizeof(dimensions) / sizeof(dimensions[0]);
+
+    for (int i = 0; i < num_dims; i++)
+    {
         int w = dimensions[i][0];
         int h = dimensions[i][1];
-        if (w * h * 2 == file_size) {
-            
-            // Check if it fits in our static buffer
-            if (w * h > sizeof(thumbnail_buffer) / 2) {
-                fclose(fp);
-                return 0;
-            }
-            
-            thumb->width = w;
-            thumb->height = h;
-            thumb->data = thumbnail_buffer; // Use static buffer
-            
-            size_t read_bytes = fread(thumb->data, 1, file_size, fp);
-            fclose(fp);
-            
-            if (read_bytes == file_size) {
-                return 1;
-            } else {
-                return 0;
-            }
+
+        if ((long)(w * h * sizeof(uint16_t)) != file_size)
+            continue;
+
+        uint16_t *thumbnail_buffer = malloc(w * h * sizeof(uint16_t));
+        if (!thumbnail_buffer) return 0; // malloc failed
+
+        // Load image using the provided loader
+        if (load_rgb565_image(rgb565_path, thumbnail_buffer, w, h) != 0) {
+            free(thumbnail_buffer);
+            return 0;
         }
+
+        thumb->width  = w;
+        thumb->height = h;
+        thumb->data   = thumbnail_buffer;
+
+        return 1;
     }
-    
-    fclose(fp);
+
     return 0;
 }
 
 void free_thumbnail(Thumbnail *thumb) {
-    if (thumb) {
-        // No need to free static buffer, just reset pointer
+    if (thumb && thumb->data) {
+        free(thumb->data);
         thumb->data = NULL;
         thumb->width = 0;
         thumb->height = 0;

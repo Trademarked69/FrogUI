@@ -50,17 +50,16 @@ FrogUI is a MinUI-inspired libretro file browser core for SF2000/GB300 handheld 
 - **Value Cycling**: Left/Right buttons cycle through available values
 - **Settings Persistence**: Auto-saves to configuration files
 
-### Multicore Settings (`multicore.opt`)
-- **Location**: `/mnt/sda1/configs/multicore.opt`
+### FrogUI Settings (`FrogUI.opt`)
+- **Location**: `/mnt/sda1/configs/FrogUI/FrogUI.opt`
 - **Accessible Via**: SELECT button on main menu
-- **Features**:
-  - Global emulation settings
-  - Theme selection (stored as `frogui_theme` setting)
-  - Supports unlimited setting options
+- **Features**: Theme selection (stored as `frogui_theme` setting) along with other settings
 
-### Core-Specific Settings
-- **Location**: `/mnt/sda1/configs/[core_name]/[core_name].opt`
-- **Accessible Via**: SELECT button in console folders
+### Core-Specific Settings and Multicore Settings
+- **Core-Specific Settings Location**: `/mnt/sda1/configs/multicore.opt`
+- **Multicore Settings Location**: `/mnt/sda1/configs/[core_name]/[core_name].opt`
+- **Core-Specific Settings Accessible Via**: SELECT button in console folders
+- **Multicore Settings Accessible Via**: SELECT button in core settings menu
 - **Example Cores with Settings**: Gambatte, gpSP, Snes9x, PicoDrive, and others
 - **Features**: Each core can have its own configuration options
 
@@ -117,9 +116,14 @@ FrogUI supports 105+ consoles mapped to their respective cores:
 
 ### Recent Games List
 - **Location**: Accessible from main menu as first entry "Recent games"
-- **Storage File**: `/mnt/sda1/game_history.txt`
+- **Storage File**: `/mnt/sda1/frogui/game_history.txt`
 - **Maximum Entries**: 10 most recent games
-- **Data Format**: `core_name|game_name|full_path` (with backward compatibility for old format)
+- **Data Format**: `core_name|game_name|path` (path is after /mnt/sda1/ROMS)
+
+### Favorite Games List
+- **Location**: Accessible from main menu as second entry "Favorites"
+- **Storage File**: `/mnt/sda1/frogui/favorites.txt`
+- **Data Format**: `core_name|game_name|path` (path is after /mnt/sda1/ROMS)
 
 ### Features
 - **Auto-tracking**: Every launched game is automatically added to recent list
@@ -377,18 +381,22 @@ Accessible from main menu, provides access to:
       [rom files]
     js2000/             [utility games]
     frogui/             [hidden]
+      game_history.txt      [recent games list]
+      favorites.txt         [favorites games list]
+      console_mappings.opt  [favorites games list]
     saves/              [hidden]
   configs/
     multicore.opt       [global settings]
     [core_name]/
       [core_name].opt   [core-specific settings]
-  game_history.txt      [recent games list]
 ```
 
 ### Editable Configuration Files
 - **multicore.opt**: Global settings including theme
 - **Core .opt files**: Core-specific emulation settings
 - **game_history.txt**: Recent games list (auto-managed)
+- **favorites.txt**: Favorite games list (auto-managed)
+- **console_mappings.opt**: Core associations list
 
 ---
 

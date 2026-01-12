@@ -7,8 +7,8 @@
 
 typedef struct {
     char core_name[64];
-    char game_name[256];
-    char full_path[512];
+    char game_name[128];
+    char full_path[256];
     char display_name[320];
 } FavoriteGame;
 

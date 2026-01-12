@@ -81,9 +81,6 @@ typedef struct {
 // Load thumbnail from PNG file
 int load_thumbnail(const char *png_path, Thumbnail *thumb);
 
-// Load raw RGB565 file (fallback)
-int load_raw_rgb565(const char *path, Thumbnail *thumb);
-
 // Free thumbnail memory
 void free_thumbnail(Thumbnail *thumb);
 
